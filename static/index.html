@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrisisAI Orchestration Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: sans-serif; }
+        .dashboard-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid #334155; border-radius: 12px; padding: 2rem; }
+        .status-badge { background: #059669; color: white; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; }
+        #gemma-response { min-height: 150px; background: #020617; border-radius: 8px; padding: 1rem; border-left: 4px solid #3b82f6; white-space: pre-wrap; color: #60a5fa; }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>CrisisAI Control <span class="status-badge">Live on Google Cloud</span></h1>
+            <p class="text-secondary">Project: Crisis-Orchestration-AI</p>
+        </div>
+        <div class="dashboard-card shadow-lg text-center">
+            <h3>Simulation Control Room</h3>
+            <p class="text-secondary mb-4">Real-time verification & Gemma 4 Safety Insights</p>
+            <div class="mb-4">
+                <button onclick="simulateTick()" class="btn btn-primary btn-lg w-100">🚀 Simulate Crisis Tick</button>
+            </div>
+            <h5 class="text-start">Gemma 4 Safety Output:</h5>
+            <div id="gemma-response" class="font-monospace text-start">System Ready. Click simulate to begin.</div>
+        </div>
+        <footer class="mt-5 text-center text-secondary small">
+            <p><strong>Developed by:</strong></p>
+            <p>Shanmukheswar Medicharla (Leader)</p>
+            <p>Vedavyas Borra | Kota Pardhasaradhi | Harshith Kotha</p>
+            <p>Pragati Engineering College (A) | Google Solution Challenge 2026</p>
+        </footer>
+    </div>
+    <script>
+        async function simulateTick() {
+            const respBox = document.getElementById("gemma-response");
+            respBox.innerHTML = "🌀 Processing AI Reasoning via Gemma 4...";
+            try {
+                const response = await fetch("/api/tick", { method: "POST" });
+                const data = await response.json();
+                respBox.innerHTML = JSON.stringify(data, null, 2);
+            } catch (err) {
+                respBox.innerHTML = "❌ Error: " + err;
+            }
+        }
+    </script>
+</body>
+</html>
