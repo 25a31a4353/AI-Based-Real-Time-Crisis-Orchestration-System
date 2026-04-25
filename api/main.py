@@ -21,6 +21,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # ── local engine imports ──────────────────────────────────────────────────────
@@ -54,6 +56,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Mount Static UI ───────────────────────────────────────────────────────────
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/", tags=["UI"])
+async def serve_ui():
+    """Serves the main Dashboard UI."""
+    return FileResponse("static/index.html")
+
 
 # ── In-memory simulation state (single instance for prototype) ────────────────
 _sim: Optional[Simulation] = None
