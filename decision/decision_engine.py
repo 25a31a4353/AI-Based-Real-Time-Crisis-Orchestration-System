@@ -15,7 +15,8 @@ def run_decision_engine(simulation, weights=None):
     w3 = weights["urgency"]
     w4 = weights["nearby_help"]
 
-    predicted_fire = simulation.predict_fire_spread(ticks_ahead=3)
+    predicted_fire_raw = simulation.predict_fire_spread(ticks_ahead=3)
+    predicted_fire = [(x,y) for x,y,f in predicted_fire_raw]
     predicted_set  = set(predicted_fire)
 
     decisions = []
@@ -26,7 +27,7 @@ def run_decision_engine(simulation, weights=None):
 
         # ── Factor 1: RISK ─────────────────────────────────
         risk = 0.0
-        for (fx, fy) in simulation.fire:
+        for (fx, fy, *_) in simulation.fire:
             dist = abs(p.x - fx) + abs(p.y - fy)
             sev  = simulation.fire_severity.get((fx, fy), 1)
             if dist == 0:
@@ -43,12 +44,13 @@ def run_decision_engine(simulation, weights=None):
                 risk += 8 / max(dist, 1)
 
         # Heat contribution
-        temp = simulation.temperature_map[p.y][p.x]
+        fl = min(getattr(p,'floor',0), simulation.building.floors-1)
+        temp = simulation.temperature_map[fl][p.y][p.x]
         if temp > 55:
             risk += (temp - 55) * 0.6
 
         # Smoke contribution
-        smoke = simulation.smoke_map[p.y][p.x]
+        smoke = simulation.smoke_map[fl][p.y][p.x]
         risk += smoke * 18
 
         # ── Factor 2: IMMOBILITY ───────────────────────────
@@ -60,7 +62,7 @@ def run_decision_engine(simulation, weights=None):
 
         # ── Factor 3: URGENCY ──────────────────────────────
         min_fire_dist = min(
-            (abs(p.x - fx) + abs(p.y - fy) for fx, fy in simulation.fire),
+            (abs(p.x - fx) + abs(p.y - fy) for fx, fy, *_ in simulation.fire),
             default=999
         )
         if min_fire_dist == 0:

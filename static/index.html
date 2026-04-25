@@ -3,298 +3,545 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crisis AI Dashboard</title>
+    <title>CrisisAI | Control Room Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #0f1115;
-            --surface: #1e2128;
-            --surface-hover: #2a2d35;
-            --primary: #3b82f6;
-            --primary-hover: #2563eb;
-            --danger: #ef4444;
-            --success: #10b981;
-            --text: #f8fafc;
-            --text-muted: #94a3b8;
-            --border: #334155;
-            --glass: rgba(30, 33, 40, 0.7);
+            --bg-dark: #0d1117;
+            --bg-sidebar: #10141b;
+            --bg-panel: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --primary: #ff5a5f;
+            --secondary: #58a6ff;
+            --success: #2ea043;
+            --warning: #d29922;
+            --accent: #7d8590;
         }
-        body {
-            background-color: var(--bg);
+
+        * { box-sizing: border-box; }
+        body, html {
+            margin: 0; padding: 0;
+            height: 100vh;
+            background-color: var(--bg-dark);
             color: var(--text);
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            margin: 0;
-            padding: 0;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            display: flex;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: 260px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            min-height: 100vh;
+            padding: 24px;
+            flex-shrink: 0;
         }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .logo span { color: var(--primary); }
+        .sidebar-subtext {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 32px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #21262d;
+            color: var(--text);
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+        .btn:hover { background: #30363d; border-color: var(--accent); }
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            border: none;
+            box-shadow: 0 4px 12px rgba(255, 90, 95, 0.2);
+        }
+        .btn-primary:hover { background: #ff454a; transform: translateY(-1px); }
+        .btn-secondary { background: #2f363d; color: var(--secondary); }
+
+        .sim-info {
+            margin-top: auto;
+            border-top: 1px solid var(--border);
+            padding-top: 24px;
+        }
+        .sim-info h3 { font-size: 14px; margin-bottom: 16px; color: var(--text); }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+        .stat-label { color: var(--text-muted); }
+        .stat-val { font-weight: 600; color: var(--text); }
+
+        /* MAIN CONTENT */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
         .header {
-            background-color: var(--glass);
-            backdrop-filter: blur(12px);
-            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 24px;
+        }
+        .header-title h1 { font-size: 22px; margin: 0 0 4px 0; }
+        .header-title p { font-size: 13px; color: var(--text-muted); margin: 0; }
+        
+        .header-badges { display: flex; gap: 8px; align-items: center; }
+        .badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            background: #1c2128;
+            border: 1px solid var(--border);
+        }
+        .badge-live { background: rgba(248, 81, 73, 0.1); color: #ff7b72; border-color: rgba(248, 81, 73, 0.4); }
+
+        /* SUMMARY BAR */
+        .summary-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .summary-card-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .summary-card-val { font-size: 24px; font-weight: 700; }
+        .summary-card-sub { font-size: 11px; color: var(--text-muted); }
+
+        /* TABS */
+        .tabs {
+            display: flex;
+            gap: 24px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+        .tab {
+            padding: 12px 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tab.active { color: var(--text); }
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px; left: 0; right: 0;
+            height: 2px;
+            background: var(--primary);
+        }
+
+        /* GRID CONTENT */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 24px;
+            flex-grow: 1;
+        }
+
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .panel-header {
+            padding: 16px;
             border-bottom: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 10;
         }
-        .header h1 {
-            margin: 0;
-            font-size: 1.5rem;
-            font-weight: 600;
-            background: linear-gradient(to right, #60a5fa, #a78bfa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .status-badge {
-            background-color: rgba(16, 185, 129, 0.15);
-            color: var(--success);
-            padding: 0.5rem 1rem;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-        .status-badge::before {
-            content: "";
-            width: 8px;
-            height: 8px;
-            background-color: var(--success);
-            border-radius: 50%;
-            box-shadow: 0 0 8px var(--success);
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(1.2); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-        .main-content {
-            flex: 1;
-            padding: 2rem;
-            max-width: 1200px;
-            margin: 0 auto;
-            width: 100%;
-            box-sizing: border-box;
-            display: grid;
-            grid-template-columns: 1fr 300px;
-            gap: 2rem;
-        }
-        @media (max-width: 768px) {
-            .main-content { grid-template-columns: 1fr; }
-        }
-        .panel {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 1.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .panel:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        }
-        .panel h2 {
-            margin-top: 0;
-            font-size: 1.125rem;
-            color: var(--text-muted);
-            font-weight: 500;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 0.75rem;
-            margin-bottom: 1rem;
-        }
-        .gemma-display {
-            font-size: 1.1rem;
-            line-height: 1.6;
-            color: #e2e8f0;
-            min-height: 100px;
-            background: rgba(0,0,0,0.2);
-            padding: 1.5rem;
-            border-radius: 8px;
-            border-left: 4px solid var(--primary);
-        }
-        .gemma-placeholder {
-            color: var(--text-muted);
-            font-style: italic;
-        }
-        .controls {
+        .panel-header h2 { font-size: 14px; margin: 0; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* MAP */
+        .map-wrapper {
+            padding: 24px;
             display: flex;
             flex-direction: column;
-            gap: 1rem;
-        }
-        button {
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            padding: 1rem;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            justify-content: center;
             align-items: center;
-            gap: 0.5rem;
+            justify-content: center;
+            background: #0d1117;
+            height: 100%;
         }
-        button:hover {
-            background-color: var(--primary-hover);
-        }
-        button:active {
-            transform: scale(0.98);
-        }
-        .stats-grid {
+        .grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 1rem;
-            margin-top: 1rem;
+            grid-template-columns: repeat(10, 44px);
+            grid-template-rows: repeat(10, 44px);
+            gap: 4px;
         }
-        .stat-card {
-            background-color: rgba(0,0,0,0.2);
-            padding: 1rem;
-            border-radius: 8px;
+        .cell {
+            background: rgba(48, 54, 61, 0.3);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            position: relative;
+        }
+        .cell::after {
+            content: attr(data-coord);
+            position: absolute;
+            bottom: 2px; right: 2px;
+            font-size: 7px;
+            color: rgba(255,255,255,0.1);
+        }
+        .cell.fire { background: rgba(248, 81, 73, 0.2); border: 1px solid rgba(248, 81, 73, 0.4); }
+        .cell.fire::before { content: '🔥'; }
+        .cell.predicted { background: rgba(210, 153, 34, 0.15); border: 1px solid rgba(210, 153, 34, 0.4); }
+        .cell.predicted::before { content: '⚠️'; font-size: 14px; }
+        .cell.icu::before { content: '🏥'; }
+        .cell.patient::before { content: '🧍'; }
+        .cell.staff::before { content: '⚕️'; }
+        .cell.exit { border: 2px solid var(--success); }
+
+        /* CARDS */
+        .card-list { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .data-card {
+            background: #1c2128;
             border: 1px solid var(--border);
-            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            position: relative;
         }
-        .stat-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--primary);
+        .data-card::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 4px;
+            border-radius: 4px 0 0 4px;
         }
-        .stat-label {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 0.25rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+        .card-critical::before { background: var(--primary); }
+        .card-stable::before { background: var(--success); }
+
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .card-title { font-weight: 700; font-size: 14px; }
+        .card-score { font-size: 20px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+        .card-metrics {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
         }
-        .footer {
-            background-color: var(--surface);
-            padding: 1.5rem;
-            text-align: center;
-            border-top: 1px solid var(--border);
-            color: var(--text-muted);
-            font-size: 0.875rem;
+        .metric {
+            background: #0d1117;
+            padding: 8px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
         }
-        .footer span {
-            color: #a78bfa;
-            font-weight: 500;
+        .metric-label { font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+        .metric-val { font-size: 12px; font-weight: 600; color: var(--primary); }
+
+        /* LOG */
+        .log-panel { margin-top: 24px; max-height: 200px; }
+        .log-container {
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 8px;
         }
-        .loader {
-            border: 3px solid rgba(255,255,255,0.1);
-            border-top: 3px solid white;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            animation: spin 1s linear infinite;
-            display: none;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .log-entry { color: var(--text-muted); }
+        .log-entry span { color: var(--primary); margin-right: 8px; }
+
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Crisis AI Orchestration</h1>
-        <div class="status-badge">Live on Google Cloud</div>
+
+    <div class="sidebar">
+        <div class="logo"><span>⚡</span> CrisisAI</div>
+        <div class="sidebar-subtext">Control Panel</div>
+
+        <button class="btn btn-primary" onclick="initSystem()">🚀 Initialize System</button>
+        <button class="btn btn-secondary" onclick="simulateTick()">⏭️ Next Tick</button>
+        <button class="btn btn-secondary" onclick="runMultipleTicks(3)">⏩ Run 3 Ticks</button>
+        <button class="btn" onclick="logEvent('Firefighters deploying...')">🚒 Firefighters Arrive</button>
+
+        <div class="sim-info">
+            <h3>Simulation Info</h3>
+            <div class="stat-row"><span class="stat-label">Tick:</span> <span class="stat-val" id="val-tick">0</span></div>
+            <div class="stat-row"><span class="stat-label">Fire cells:</span> <span class="stat-val" id="val-fire">0</span></div>
+            <div class="stat-row"><span class="stat-label">Patients:</span> <span class="stat-val" id="val-patients">5</span></div>
+            <div class="stat-row"><span class="stat-label">Staff:</span> <span class="stat-val" id="val-staff">3</span></div>
+            <div class="stat-row"><span class="stat-label">Firefighters:</span> <span class="stat-val" id="val-firefighters">0</span></div>
+        </div>
     </div>
 
     <div class="main-content">
-        <div class="panel">
-            <h2>Gemma 4 AI Decision Engine</h2>
-            <div class="gemma-display" id="ai-response">
-                <span class="gemma-placeholder">Awaiting simulation tick... Click "Simulate Tick" to fetch real-time AI analysis.</span>
+        <div class="header">
+            <div class="header-title">
+                <h1>🔥 AI-Based Real-Time Crisis Orchestration System</h1>
+                <p>Multi-Occupancy Buildings · Detection · Decision · Assignment · Verification</p>
             </div>
-            
-            <div style="margin-top: 2rem;">
-                <h2>Simulation Stats</h2>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-tick">-</div>
-                        <div class="stat-label">Current Tick</div>
+            <div class="header-badges">
+                <div class="badge" id="tick-badge">TICK 000</div>
+                <div class="badge badge-live">LIVE</div>
+            </div>
+        </div>
+
+        <div class="summary-bar">
+            <div class="summary-card">
+                <div class="summary-card-label">🔥 Fire Cells</div>
+                <div class="summary-card-val" id="sum-fire">0</div>
+                <div class="summary-card-sub">active zones</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">⚠️ Critical</div>
+                <div class="summary-card-val" id="sum-critical">0</div>
+                <div class="summary-card-sub">patients</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">✅ Assigned</div>
+                <div class="summary-card-val" id="sum-assigned">0</div>
+                <div class="summary-card-sub">staff deployed</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">📋 Completed</div>
+                <div class="summary-card-val">0</div>
+                <div class="summary-card-sub">tasks verified</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">❌ Failed</div>
+                <div class="summary-card-val">0</div>
+                <div class="summary-card-sub">reassign needed</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-card-label">🎯 Top Score</div>
+                <div class="summary-card-val" id="sum-score">0.0</div>
+                <div class="summary-card-sub" id="sum-top-p">N/A</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('map')">🗺️ Live Map</div>
+            <div class="tab" onclick="switchTab('decision')">🧠 Decision Engine</div>
+            <div class="tab" onclick="switchTab('planner')">🎯 AI Planner</div>
+            <div class="tab" onclick="switchTab('verification')">✅ Verification</div>
+            <div class="tab" onclick="switchTab('firefighter')">🚒 Firefighter Mode</div>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- LEFT PANEL: MAP OR DECISION FORMULA -->
+            <div class="panel" id="main-panel">
+                <div class="panel-header">
+                    <h2 id="panel-title">Building Floor Map</h2>
+                </div>
+                <div class="map-wrapper" id="tab-map">
+                    <div class="grid" id="sim-grid"></div>
+                </div>
+                <div class="card-list hidden" id="tab-decision">
+                    <div style="background: rgba(88, 166, 255, 0.1); border: 1px solid rgba(88, 166, 255, 0.4); padding: 16px; border-radius: 8px; margin-bottom: 24px;">
+                        <h3 style="margin:0 0 8px 0; font-size:14px; color:var(--secondary)">Gemma 4 — AI FIRE ANALYSIS</h3>
+                        <p id="ai-text" style="margin:0; font-size:13px; font-style:italic;">Awaiting data analysis...</p>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-fire">-</div>
-                        <div class="stat-label">Active Fire Cells</div>
+                    <div style="text-align:center; padding: 24px; border: 1px dashed var(--border); border-radius: 8px;">
+                        <div style="color:var(--text-muted); font-size:11px; margin-bottom:12px; font-weight:700;">PRIORITY SCORING FORMULA</div>
+                        <div style="font-size:24px; font-weight:700; font-family:'JetBrains Mono'">P = Risk + Immobility + Urgency - Help</div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-rescued">-</div>
-                        <div class="stat-label">Rescued Patients</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-survival">-</div>
-                        <div class="stat-label">Survival Rate</div>
-                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT PANEL: PRIORITY LIST -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Priority Decisions</h2>
+                </div>
+                <div class="card-list" id="priority-list">
+                    <!-- Cards injected here -->
                 </div>
             </div>
         </div>
 
-        <div class="panel controls">
-            <h2>Controls</h2>
-            <button id="tick-btn" onclick="simulateTick()">
-                <span>Simulate Tick</span>
-                <div class="loader" id="tick-loader"></div>
-            </button>
-            <button onclick="resetSimulation()" style="background-color: transparent; border: 1px solid var(--border); color: var(--text);">
-                Reset Simulation
-            </button>
+        <div class="panel log-panel">
+            <div class="panel-header"><h2>Event Log</h2></div>
+            <div class="log-container" id="event-log">
+                <div class="log-entry"><span>[Init]</span> Dashboard ready. Awaiting simulation initialization...</div>
+            </div>
         </div>
     </div>
 
-    <div class="footer">
-        Engineered for the Crisis AI Hackathon by<br><br>
-        <span>Medicharla Shanmukheswar</span> &bull; <span>Satya Mohith</span> &bull; <span>Ram Charan</span> &bull; <span>K. G. Sanjay</span>
-    </div>
-
     <script>
+        let currentTab = 'map';
+
+        function switchTab(tabId) {
+            currentTab = tabId;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            document.getElementById('tab-map').classList.toggle('hidden', tabId !== 'map');
+            document.getElementById('tab-decision').classList.toggle('hidden', tabId !== 'decision');
+            
+            document.getElementById('panel-title').innerText = tabId === 'map' ? 'Building Floor Map' : 'Decision Logic Breakdown';
+        }
+
+        function logEvent(msg, type = 'System') {
+            const log = document.getElementById('event-log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+            entry.innerHTML = `<span>[${type}]</span> ${msg}`;
+            log.prepend(entry);
+        }
+
+        function initSystem() {
+            logEvent("System initialized. Fire detected at (5,6).", "Init");
+            simulateTick();
+        }
+
         async function simulateTick() {
-            const btn = document.getElementById('tick-btn');
-            const loader = document.getElementById('tick-loader');
-            const span = btn.querySelector('span');
-            
-            btn.disabled = true;
-            span.style.display = 'none';
-            loader.style.display = 'block';
-            
             try {
                 const response = await fetch('/api/tick', { method: 'POST' });
                 const data = await response.json();
-                
-                // Update Gemma Response
-                document.getElementById('ai-response').innerHTML = 
-                    data.ai_fire_direction || "<span class='gemma-placeholder'>No AI prediction available.</span>";
-                
-                // Update Stats
-                document.getElementById('stat-tick').innerText = data.tick;
-                document.getElementById('stat-fire').innerText = data.fire_cells;
-                document.getElementById('stat-rescued').innerText = data.success_stats?.rescued ?? 0;
-                document.getElementById('stat-survival').innerText = 
-                    (data.success_stats?.survival_rate ?? 0) + '%';
-                
-            } catch (error) {
-                console.error("Error fetching tick:", error);
-                document.getElementById('ai-response').innerHTML = 
-                    "<span style='color: var(--danger)'>Error communicating with backend.</span>";
-            } finally {
-                btn.disabled = false;
-                span.style.display = 'block';
-                loader.style.display = 'none';
+                updateUI(data);
+            } catch (err) {
+                logEvent("Failed to reach simulation backend.", "Error");
             }
         }
-        
-        async function resetSimulation() {
-            await fetch('/api/reset', { method: 'POST' });
-            document.getElementById('ai-response').innerHTML = "<span class='gemma-placeholder'>Simulation reset. Awaiting next tick.</span>";
-            document.getElementById('stat-tick').innerText = "-";
-            document.getElementById('stat-fire').innerText = "-";
-            document.getElementById('stat-rescued').innerText = "-";
-            document.getElementById('stat-survival').innerText = "-";
+
+        async function runMultipleTicks(count) {
+            for(let i=0; i<count; i++) {
+                await simulateTick();
+                await new Promise(r => setTimeout(r, 600));
+            }
         }
+
+        function updateUI(data) {
+            // Stats
+            document.getElementById('val-tick').innerText = data.tick;
+            document.getElementById('tick-badge').innerText = `TICK ${String(data.tick).padStart(3, '0')}`;
+            document.getElementById('val-fire').innerText = data.fire_cells;
+            document.getElementById('sum-fire').innerText = data.fire_cells;
+            
+            const criticalCount = data.patients.filter(p => p.condition === 'critical' && !p.rescued).length;
+            document.getElementById('sum-critical').innerText = criticalCount;
+            document.getElementById('sum-assigned').innerText = data.assignments.length;
+            
+            if (data.ai_logic) document.getElementById('ai-text').innerText = data.ai_logic;
+
+            // Map
+            const grid = document.getElementById('sim-grid');
+            grid.innerHTML = '';
+            for(let y=0; y<10; y++) {
+                for(let x=0; x<10; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.setAttribute('data-coord', `${x},${y}`);
+                    
+                    // Check Fire
+                    if (data.fire_coords.some(f => f[0] === x && f[1] === y)) cell.classList.add('fire');
+                    
+                    // Check Patients
+                    const p = data.patients.find(p => p.x === x && p.y === y && !p.rescued);
+                    if (p) {
+                        cell.classList.add(p.condition === 'critical' ? 'icu' : 'patient');
+                    }
+
+                    // Check Staff
+                    const s = data.staff.find(s => s.x === x && s.y === y);
+                    if (s) cell.classList.add('staff');
+
+                    grid.appendChild(cell);
+                }
+            }
+
+            // Priority List
+            const pList = document.getElementById('priority-list');
+            pList.innerHTML = '';
+            const sortedPatients = [...data.patients].sort((a,b) => b.risk_score - a.risk_score);
+            
+            if (sortedPatients.length > 0) {
+                document.getElementById('sum-score').innerText = sortedPatients[0].risk_score;
+                document.getElementById('sum-top-p').innerText = `Patient ${sortedPatients[0].id}`;
+            }
+
+            sortedPatients.forEach(p => {
+                const card = document.createElement('div');
+                card.className = `data-card ${p.condition === 'critical' ? 'card-critical' : 'card-stable'}`;
+                if (p.rescued) card.style.opacity = '0.3';
+                
+                card.innerHTML = `
+                    <div class="card-header">
+                        <div class="card-title">Patient ${p.id} — ${p.condition.toUpperCase()}</div>
+                        <div class="card-score">${p.risk_score}</div>
+                    </div>
+                    <div class="card-metrics">
+                        <div class="metric"><span class="metric-label">Risk</span><span class="metric-val">${p.risk_score}</span></div>
+                        <div class="metric"><span class="metric-label">Imm</span><span class="metric-val">${p.movable ? 20 : 80}</span></div>
+                        <div class="metric"><span class="metric-label">Temp</span><span class="metric-val">${p.temp}°C</span></div>
+                        <div class="metric"><span class="metric-label">Smoke</span><span class="metric-val">${p.smoke}</span></div>
+                    </div>
+                `;
+                pList.appendChild(card);
+            });
+
+            logEvent(`Tick ${data.tick} processed. Orchestration confirmed.`, "Tick");
+        }
+
+        // Init blank grid
+        updateUI({tick:0, fire_cells:0, fire_coords:[], patients:[], staff:[], assignments:[]});
     </script>
 </body>
 </html>

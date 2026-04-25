@@ -1,165 +1,106 @@
-import heapq
-
 def _manhattan(ax, ay, bx, by):
     return abs(ax - bx) + abs(ay - by)
 
-def find_path(start, end, simulation, risk_threshold=95):
-    """
-    A* algorithm to find the shortest SAFE path.
-    Penalizes fire proximity and smoke density.
-    Returns (path, total_risk) or (None, inf)
-    """
-    W, H = simulation.building.width, simulation.building.height
-    fire_set = set(simulation.fire)
-    
-    queue = [(0, start, [])]
-    visited = set()
-    
-    while queue:
-        (cost, current, path) = heapq.heappop(queue)
-        
-        if current in visited:
-            continue
-        
-        visited.add(current)
-        path = path + [current]
-        
-        if current == end:
-            return path, cost
-        
-        cx, cy = current
-        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-            nx, ny = cx + dx, cy + dy
-            
-            if 0 <= nx < W and 0 <= ny < H:
-                if (nx, ny) in fire_set:
-                    continue # Hard constraint: No fire cells
-                
-                # Risk calculation
-                smoke = simulation.smoke_map[ny][nx]
-                temp = simulation.temperature_map[ny][nx]
-                
-                # Penalty for fire proximity
-                min_fire_dist = min([abs(nx-fx) + abs(ny-fy) for fx, fy in fire_set], default=99)
-                fire_penalty = 40 / max(min_fire_dist, 1) if min_fire_dist <= 1 else 0
-                
-                step_risk = 1 + (smoke * 15) + (max(0, temp - 50) * 0.3) + fire_penalty
-                
-                if step_risk > risk_threshold:
-                    continue 
-                
-                heapq.heappush(queue, (cost + step_risk, (nx, ny), path))
-                
-    return None, float("inf")
+def _path_risk(sx, sy, px, py, simulation):
+    """Estimate danger level of the straight-line path between staff and patient."""
+    steps = max(abs(sx - px), abs(sy - py), 1)
+    risk  = 0.0
+    fire_set = set((x,y) for x,y,*_ in simulation.fire)
 
-def run_assignment(simulation, decisions):
+    for i in range(steps + 1):
+        t  = i / steps
+        cx = round(sx + t * (px - sx))
+        cy = round(sy + t * (py - sy))
+        cx = max(0, min(cx, simulation.building.width  - 1))
+        cy = max(0, min(cy, simulation.building.height - 1))
+
+        if (cx, cy) in fire_set:
+            sev   = simulation.fire_severity.get((cx, cy), 1)
+            risk += 25 * sev
+
+        fl = 0
+        smoke = simulation.smoke_map[fl][cy][cx]
+        risk += smoke * 8
+
+        temp = simulation.temperature_map[fl][cy][cx]
+        if temp > 50:
+            risk += (temp - 50) * 0.25
+
+    return round(risk, 1)
+
+def run_assignment(simulation, decisions,
+                   alpha=1.0, beta=0.7, gamma=0.4, delta=1.3):
+    """
+    Assignment Cost: A = α·Distance + β·PathRisk + γ·Load − δ·SkillMatch
+    Objective: minimise total rescue cost across all assignments.
+
+    α=1.0  Distance   → travel time
+    β=0.7  PathRisk   → fire/smoke on route
+    γ=0.4  Load       → avoid overloading one staff member
+    δ=1.3  SkillMatch → big reward for sending ICU-trained staff to ICU patient
+    """
     assignments = []
-    cancelled_assignments = []
-    unreachable_patients = []
-    
-    # ── [1] Dynamic Reassignment Check ────────────────
-    for p in simulation.patients:
-        if p.status == "assigned" and p.assigned_staff_id is not None:
-            staff = next((s for s in simulation.staff if s.id == p.assigned_staff_id), None)
-            if staff:
-                new_path, risk = find_path((staff.x, staff.y), (p.x, p.y), simulation)
-                if not new_path:
-                    cancelled_assignments.append({
-                        "patient_id": p.id,
-                        "staff_id": staff.id,
-                        "reason": "Path blocked by fire"
-                    })
-                    p.status = "waiting"
-                    p.assigned_staff_id = None
-                    staff.assigned_patient_id = None
-                    staff.load = max(0, staff.load - 1)
+    used_staff  = set()
 
-    # ── [2] New Assignments ───────────────────────────
-    used_staff = {s.id for s in simulation.staff if s.assigned_patient_id is not None}
-    
     for d in decisions:
-        p_id = d["patient_id"]
-        patient = next((p for p in simulation.patients if p.id == p_id), None)
-        
-        if not patient or patient.evacuated or patient.status != "waiting":
+        patient = next((p for p in simulation.patients if p.id == d["patient_id"]), None)
+        if patient is None or patient.evacuated:
             continue
 
         best_staff = None
-        best_path_to_patient = None
-        best_path_to_exit = None
-        min_total_risk = float("inf")
-        
-        is_emergency = d["explanation"]["min_fire_dist"] <= 1 or d["priority"] > 80
+        best_cost  = float("inf")
+        best_breakdown = {}
 
         for s in simulation.staff:
             if s.id in used_staff:
                 continue
-            
-            path_to_p, risk_to_p = find_path((s.x, s.y), (patient.x, patient.y), simulation)
-            if not path_to_p:
-                continue
-            
-            best_exit_path = None
-            min_exit_risk = float("inf")
-            for exit_pos in simulation.building.exits:
-                path_to_e, risk_to_e = find_path((patient.x, patient.y), exit_pos, simulation)
-                if path_to_e and risk_to_e < min_exit_risk:
-                    best_exit_path = path_to_e
-                    min_exit_risk = risk_to_e
-            
-            if not best_exit_path:
-                continue
-            
-            total_risk = risk_to_p + min_exit_risk
-            if not patient.movable and not s.trained:
-                total_risk += 100
-            
-            if total_risk < min_total_risk:
-                min_total_risk = total_risk
+
+            dist      = _manhattan(s.x, s.y, patient.x, patient.y)
+            path_risk = _path_risk(s.x, s.y, patient.x, patient.y, simulation)
+            load      = getattr(s, "load", 0)
+
+            # Skill match bonus
+            skill_bonus = 0.0
+            if not patient.movable and getattr(s, "trained", False):
+                skill_bonus = delta * 18      # ICU patient + trained staff
+            elif not patient.movable and not getattr(s, "trained", True):
+                path_risk  += 12              # Penalty: untrained for ICU
+
+            cost = alpha*dist + beta*path_risk + gamma*load - skill_bonus
+
+            if cost < best_cost:
+                best_cost  = cost
                 best_staff = s
-                best_path_to_patient = path_to_p
-                best_path_to_exit = best_exit_path
+                best_breakdown = {
+                    "distance":   dist,
+                    "path_risk":  path_risk,
+                    "load":       load,
+                    "skill_bonus": round(skill_bonus, 1),
+                    "total_cost": round(cost, 1),
+                }
 
         if best_staff:
-            patient.status = "assigned"
-            patient.assigned_staff_id = best_staff.id
-            patient.path = best_path_to_patient + best_path_to_exit[1:]
-            
-            best_staff.assigned_patient_id = patient.id
-            best_staff.load += 1
             used_staff.add(best_staff.id)
-            
+            best_staff.load = getattr(best_staff, "load", 0) + 1
+
+            if best_breakdown["path_risk"] > 25:
+                route_note = "⚠️ Fire on route — use alternate corridor"
+            elif best_breakdown["path_risk"] > 8:
+                route_note = "⚠️ Smoke on path — proceed with mask"
+            else:
+                route_note = "✅ Route clear"
+
             assignments.append({
-                "patient_id": patient.id,
-                "staff_id": best_staff.id,
-                "priority_score": d["priority"],
-                "reason": [
-                    f"Risk={round(min_total_risk, 1)}",
-                    "Emergency override" if is_emergency else "Optimal path"
-                ],
-                "expected_outcome": "rescued" if min_total_risk < 150 else "high risk"
-            })
-        else:
-            patient.status = "waiting"
-            # Identify fire blocking cells (near patient)
-            blocking = [(fx, fy) for fx, fy in simulation.fire 
-                        if abs(fx - patient.x) + abs(fy - patient.y) <= 3]
-            unreachable_patients.append({
-                "patient_id": patient.id,
-                "blocking_cells": blocking
+                "staff_id":      best_staff.id,
+                "patient_id":    patient.id,
+                "target_room":   f"({patient.x},{patient.y})",
+                "cost_breakdown": best_breakdown,
+                "route_note":    route_note,
+                "reason": (
+                    f"dist={best_breakdown['distance']} | "
+                    f"risk={best_breakdown['path_risk']} | "
+                    f"cost={best_breakdown['total_cost']}"
+                ),
             })
 
-    return {
-        "tick": simulation.tick,
-        "assignments": assignments,
-        "cancelled_assignments": cancelled_assignments,
-        "unreachable_patients": unreachable_patients,
-        "summary": {
-            "assigned": len(assignments),
-            "unreachable": len(unreachable_patients),
-            "active_tasks": sum(1 for s in simulation.staff if s.assigned_patient_id is not None),
-            "rescued_count": simulation.rescued_count,
-            "failed_count": simulation.failed_count,
-            "survival_rate": simulation.get_survival_rate()
-        }
-    }
+    return {"assignments": assignments}

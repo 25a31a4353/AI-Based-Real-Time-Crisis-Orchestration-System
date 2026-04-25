@@ -36,6 +36,7 @@ class VerificationEngine:
                 "task_id":      tid,
                 "staff_id":     a["staff_id"],
                 "patient_id":   a["patient_id"],
+                "target_room":  a["target_room"],
                 "assigned_tick": current_tick,
                 "deadline_tick": current_tick + self.deadline_ticks,
                 "status":       "active",   # active | likely_complete | completed | failed
@@ -72,9 +73,10 @@ class VerificationEngine:
             dist_to_patient = abs(staff.x - patient.x) + abs(staff.y - patient.y)
             fire_near_patient = any(
                 abs(patient.x - fx) + abs(patient.y - fy) <= 1
-                for fx, fy in simulation.fire
+                for fx, fy, *_ in simulation.fire
             )
-            smoke_at_patient = simulation.smoke_map[patient.y][patient.x]
+            pfl = min(getattr(patient,'floor',0), simulation.building.floors-1)
+            smoke_at_patient = simulation.smoke_map[pfl][patient.y][patient.x]
 
             # ── Likely complete? ──────────────────────────
             if dist_to_patient <= 2 and not fire_near_patient:

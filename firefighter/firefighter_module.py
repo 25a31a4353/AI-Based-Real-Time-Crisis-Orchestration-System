@@ -16,7 +16,7 @@ def get_firefighter_briefing(simulation):
     # ── High-priority fire zones (severity ≥ 3) ──────────
     hot_zones = [
         {"cell": (x, y), "severity": sev, "label": f"SEVERITY {sev}"}
-        for (x, y), sev in fire_severity.items() if sev >= 3
+        for (x, y, *_), sev in fire_severity.items() if sev >= 3
     ]
     hot_zones.sort(key=lambda z: -z["severity"])
 
@@ -25,8 +25,8 @@ def get_firefighter_briefing(simulation):
 
     # Sort entries: furthest from fire centroid = safest
     if fire_cells and safe_entries:
-        fcx = sum(x for x, y in fire_cells) / len(fire_cells)
-        fcy = sum(y for x, y in fire_cells) / len(fire_cells)
+        fcx = sum(x for x,y,*_ in fire_cells) / len(fire_cells)
+        fcy = sum(y for x,y,*_ in fire_cells) / len(fire_cells)
         safe_entries.sort(
             key=lambda e: -(abs(e[0]-fcx) + abs(e[1]-fcy))
         )
@@ -39,10 +39,11 @@ def get_firefighter_briefing(simulation):
         if p.evacuated:
             continue
         fire_dist = min(
-            (abs(p.x - fx) + abs(p.y - fy) for fx, fy in fire_cells),
+            (abs(p.x - fx) + abs(p.y - fy) for fx,fy,*_ in fire_cells),
             default=999
         )
-        smoke_lvl = simulation.smoke_map[p.y][p.x]
+        pfl = min(getattr(p,'floor',0), simulation.building.floors-1)
+        smoke_lvl = simulation.smoke_map[pfl][p.y][p.x]
         # Flag ICU patients near fire, OR any patient in heavy smoke
         if (not p.movable and fire_dist <= 5) or smoke_lvl > 0.6:
             critical_patients.append({
@@ -57,12 +58,12 @@ def get_firefighter_briefing(simulation):
 
     # ── Fire spread direction ─────────────────────────────
     if len(fire_cells) >= 4:
-        xs = [x for x, y in fire_cells]
-        ys = [y for x, y in fire_cells]
+        xs = [x for x,y,*_ in fire_cells]
+        ys = [y for x,y,*_ in fire_cells]
         cx, cy = sum(xs)/len(xs), sum(ys)/len(ys)
         new_cells = fire_cells[-min(4,len(fire_cells)):]
-        ncx = sum(x for x, y in new_cells)/len(new_cells)
-        ncy = sum(y for x, y in new_cells)/len(new_cells)
+        ncx = sum(x for x,y,*_ in new_cells)/len(new_cells)
+        ncy = sum(y for x,y,*_ in new_cells)/len(new_cells)
         hdir = "East" if ncx > cx else ("West" if ncx < cx else "")
         vdir = "South" if ncy > cy else ("North" if ncy < cy else "")
         direction = f"{vdir}-{hdir}".strip("-") or "Radial"
@@ -90,4 +91,5 @@ def get_firefighter_briefing(simulation):
             f"{len(critical_patients)} critical patients need FF support"
         ),
     }
+
 

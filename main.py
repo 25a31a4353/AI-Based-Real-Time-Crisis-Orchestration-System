@@ -35,16 +35,28 @@ API_KEY = os.getenv("GOOGLE_API_KEY")
 
 async def get_antigravity_reasoning(data_summary):
     """Calls Gemini to act as the Antigravity Orchestrator"""
+    if not API_KEY:
+        print("[DEBUG] GOOGLE_API_KEY environment variable not set. Using local fallback.")
+        return "Orchestrator (Local Fallback): Maintain current rescue vectors. Prioritize high-risk zones."
+
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
     prompt = f"System Status: {data_summary}. Provide a 1-sentence strategic instruction for the rescue teams."
     
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    print(f"[DEBUG] Calling Antigravity AI (Gemini 1.5) -> Summary: {data_summary}")
+    
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, json=payload)
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        except:
-            return "Orchestrator: Maintain current rescue vectors. Prioritize high-risk zones."
+            if response.status_code == 200:
+                print("[DEBUG] AI Response SUCCESS (200 OK)")
+                return response.json()['candidates'][0]['content']['parts'][0]['text']
+            else:
+                print(f"[DEBUG] AI Response FAILED with status {response.status_code}")
+                return "Orchestrator (Local Fallback): Maintain current rescue vectors. Prioritize high-risk zones."
+        except Exception as e:
+            print(f"[DEBUG] AI Request EXCEPTION: {str(e)}")
+            return "Orchestrator (Local Fallback): Maintain current rescue vectors. Prioritize high-risk zones."
 
 # --- 3. WEB ROUTES ---
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -82,10 +94,34 @@ async def simulate_tick():
     status_summary = f"Tick {sim.tick}, {sim.rescued_count} rescued, {len(sim.fire)} fire cells"
     ai_reasoning = await get_antigravity_reasoning(status_summary)
 
+    # Enrich state for UI
+    patients_data = []
+    for p in sim.patients:
+        patients_data.append({
+            "id": p.id,
+            "x": p.x, "y": p.y,
+            "condition": p.condition,
+            "movable": p.movable,
+            "rescued": p.rescued,
+            "risk_score": round(100 + (p.y * 20.5) if not p.rescued else 0, 1),
+            "temp": 20 + len(sim.fire),
+            "smoke": round(len(sim.fire) * 0.05, 2)
+        })
+
     return {
         "tick": sim.tick,
         "rescued_count": sim.rescued_count,
         "survival_rate": sim.get_survival_rate(),
-        "ai_logic": ai_reasoning, # This is the Antigravity Agent speaking
-        "fire_cells": len(sim.fire)
+        "ai_logic": ai_reasoning,
+        "fire_cells": len(sim.fire),
+        "fire_coords": list(sim.fire),
+        "patients": patients_data,
+        "staff": [{"id": s.id, "x": s.x, "y": s.y, "role": s.role} for s in sim.staff],
+        "assignments": assignment_results["assignments"]
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    print("\n[SYSTEM] Starting Crisis Orchestration UI locally...")
+    print("[SYSTEM] Access dashboard at: http://localhost:8000\n")
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

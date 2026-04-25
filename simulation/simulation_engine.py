@@ -1,203 +1,192 @@
 import random
 
 class Patient:
-    def __init__(self, pid, x, y, movable=True, condition="stable"):
-        self.id = pid
-        self.x = x
-        self.y = y
-        self.movable = movable          # False = ICU (immobile)
-        self.condition = condition      # "stable" | "critical"
+    def __init__(self, pid, x, y, floor=0, movable=True, condition="stable"):
+        self.id        = pid
+        self.x         = x
+        self.y         = y
+        self.floor     = floor
+        self.movable   = movable
+        self.condition = condition
         self.evacuated = False
-        self.status = "waiting"         # waiting, assigned, in_progress, rescued, failed
-        self.assigned_staff_id = None
-        self.path = []                  # Current path assigned
 
 class Staff:
-    def __init__(self, sid, x, y, trained=True, role="medic"):
-        self.id = sid
-        self.x = sid # This was sid in the original? No, it should be x.
-        self.x = x
-        self.y = y
-        self.trained = trained          # True = ICU-trained
-        self.role = role
-        self.load = 0                   # active tasks assigned
-        self.assigned_patient_id = None
-        self.path = []
+    def __init__(self, sid, x, y, floor=0, trained=True, role="medic"):
+        self.id      = sid
+        self.x       = x
+        self.y       = y
+        self.floor   = floor
+        self.trained = trained
+        self.role    = role
+        self.load    = 0
 
 class Firefighter:
-    def __init__(self, fid, entry_x, entry_y):
-        self.id = fid
-        self.x = entry_x
-        self.y = entry_y
+    def __init__(self, fid, x, y):
+        self.id            = fid
+        self.x             = x
+        self.y             = y
         self.assigned_zone = None
 
 class Building:
-    def __init__(self, width=10, height=10):
-        self.width = width
+    def __init__(self, width=10, height=10, floors=1):
+        self.width  = width
         self.height = height
-        self.floors = 1
-        self.exits = [(0,0),(9,0),(0,9),(9,9),(4,0),(4,9)]
+        self.floors = floors
+        self.exits  = [
+            (0,0),(width-1,0),(0,height-1),(width-1,height-1),
+            (width//2,0),(width//2,height-1)
+        ]
 
 class Simulation:
-    def __init__(self, building, patients, staff):
-        self.building = building
-        self.patients = patients
-        self.staff = staff
+    def __init__(self, building, patients, staff, fire_origin=None, fire_speed=1):
+        self.building     = building
+        self.patients     = patients
+        self.staff        = staff
         self.firefighters = []
-        self.grid = [["." for _ in range(building.width)]
-                     for _ in range(building.height)]
-        # Heat map: 20°C baseline
-        self.temperature_map = [[20.0]*building.width for _ in range(building.height)]
-        # Smoke map: 0.0 (clear) → 1.0 (dense)
-        self.smoke_map = [[0.0]*building.width for _ in range(building.height)]
-        self.fire = []
-        self.fire_severity = {}         # (x,y) → severity 1-4
-        self.tick = 0
-        
-        # Success Tracking
-        self.rescued_count = 0
-        self.failed_count = 0
-        
-        self._init_entities()
+        self.fire_speed   = fire_speed
+        self.grids = [
+            [["." for _ in range(building.width)] for _ in range(building.height)]
+            for _ in range(building.floors)
+        ]
+        self.temperature_map = [
+            [[20.0]*building.width for _ in range(building.height)]
+            for _ in range(building.floors)
+        ]
+        self.smoke_map = [
+            [[0.0]*building.width for _ in range(building.height)]
+            for _ in range(building.floors)
+        ]
+        self.fire          = []
+        self.fire_severity = {}
+        self.tick          = 0
+        if fire_origin:
+            fx, fy, ff = fire_origin
+        else:
+            fx = building.width // 2
+            fy = building.height // 2
+            ff = 0
+        self._start_fire(fx, fy, ff)
+        self._place_entities()
 
-    def _init_entities(self):
-        for p in self.patients:
-            self.grid[p.y][p.x] = "P"
-        for s in self.staff:
-            self.grid[s.y][s.x] = "S"
-        # Fire origin at (9,9)
-        origin = (9, 9)
+    def _start_fire(self, x, y, floor):
+        origin = (x, y, floor)
         self.fire.append(origin)
         self.fire_severity[origin] = 4
-        self.grid[9][9] = "F"
-        self.temperature_map[9][9] = 95.0
+        self.grids[floor][y][x] = "F"
+        self.temperature_map[floor][y][x] = 95.0
 
-    def get_survival_rate(self):
-        total = len(self.patients)
-        if total == 0: return 100.0
-        return round((self.rescued_count / total) * 100, 1)
+    def _place_entities(self):
+        for p in self.patients:
+            f = min(p.floor, self.building.floors-1)
+            self.grids[f][p.y][p.x] = "P"
+        for s in self.staff:
+            f = min(s.floor, self.building.floors-1)
+            self.grids[f][s.y][s.x] = "S"
 
-    def get_in_progress_count(self):
-        return sum(1 for p in self.patients if p.status in ["assigned", "in_progress"])
-
-    # ── Fire suppression ────────────────────────────────
-    def update_firefighters(self):
-        """Firefighters move and suppress fire in their assigned zones."""
-        for ff in self.firefighters:
-            if ff.assigned_zone:
-                zx, zy = ff.assigned_zone
-                # Move toward zone
-                dx = 1 if zx > ff.x else -1 if zx < ff.x else 0
-                dy = 1 if zy > ff.y else -1 if zy < ff.y else 0
-                ff.x += dx
-                ff.y += dy
-                
-                # Suppress fire in a 2-cell radius
-                for sx in range(ff.x - 2, ff.x + 3):
-                    for sy in range(ff.y - 2, ff.y + 3):
-                        if (sx, sy) in self.fire_severity:
-                            # Reduce severity
-                            self.fire_severity[(sx, sy)] -= 4
-                            if self.fire_severity[(sx, sy)] <= 0:
-                                del self.fire_severity[(sx, sy)]
-                                if (sx, sy) in self.fire:
-                                    self.fire.remove((sx, sy))
-                                self.grid[sy][sx] = "."
-                                self.temperature_map[sy][sx] = max(20, self.temperature_map[sy][sx] - 50)
-
-    # ── Fire spread ────────────────────────────────────
     def update_fire(self):
         W, H = self.building.width, self.building.height
-        cardinal   = [(1,0),(-1,0),(0,1),(0,-1)]
-        diagonal   = [(1,1),(-1,1),(1,-1),(-1,-1)]
-
-        new_fire = []
-        for fx, fy in self.fire:
-            sev = self.fire_severity.get((fx,fy), 2)
-            # Fire doesn't spread if severity is low (suppressed)
-            if sev <= 1: continue
-            
-            dirs = cardinal if sev < 3 else cardinal + diagonal
-            for dx, dy in dirs:
-                if random.random() > 0.4: continue # Slow spread
-                nx, ny = fx+dx, fy+dy
-                if 0 <= nx < W and 0 <= ny < H and (nx,ny) not in self.fire_severity:
-                    new_fire.append((nx, ny, max(1, sev-1)))
-
-        for nx, ny, sev in new_fire:
-            self.fire.append((nx, ny))
-            self.fire_severity[(nx,ny)] = sev
-            self.grid[ny][nx] = "F"
-            self.temperature_map[ny][nx] = min(100, self.temperature_map[ny][nx] + 40)
-
-        # Thermal radiation (2-cell radius)
-        for fx, fy in self.fire:
-            sev = self.fire_severity.get((fx,fy), 1)
-            for dx in range(-2, 3):
-                for dy in range(-2, 3):
+        cardinal = [(1,0),(-1,0),(0,1),(0,-1)]
+        diagonal = [(1,1),(-1,1),(1,-1),(-1,-1)]
+        for _ in range(self.fire_speed):
+            new_fire = []
+            for fx, fy, ff in self.fire:
+                sev  = self.fire_severity.get((fx,fy,ff), 2)
+                dirs = cardinal if sev < 3 else cardinal + diagonal
+                for dx, dy in dirs:
+                    nx, ny = fx+dx, fy+dy
+                    if 0 <= nx < W and 0 <= ny < H and (nx,ny,ff) not in self.fire_severity:
+                        new_fire.append((nx, ny, ff, max(1, sev-1)))
+            for nx, ny, nf, sev in new_fire:
+                self.fire.append((nx, ny, nf))
+                self.fire_severity[(nx,ny,nf)] = sev
+                self.grids[nf][ny][nx] = "F"
+                self.temperature_map[nf][ny][nx] = min(100, self.temperature_map[nf][ny][nx]+40)
+        for fx, fy, ff in self.fire:
+            sev = self.fire_severity.get((fx,fy,ff), 1)
+            for dx in range(-2,3):
+                for dy in range(-2,3):
                     nx, ny = fx+dx, fy+dy
                     if 0 <= nx < W and 0 <= ny < H:
                         dist = max(abs(dx)+abs(dy), 1)
-                        self.temperature_map[ny][nx] = min(
-                            100, self.temperature_map[ny][nx] + (sev*12)/dist
-                        )
-
-        # Smoke (3-cell radius, drifts south-east slightly)
-        for fx, fy in self.fire:
-            for dx in range(-3, 4):
-                for dy in range(-3, 5):    # bias toward +y (south)
+                        self.temperature_map[ff][ny][nx] = min(100,
+                            self.temperature_map[ff][ny][nx]+(sev*12)/dist)
+        for fx, fy, ff in self.fire:
+            for dx in range(-3,4):
+                for dy in range(-3,5):
                     nx, ny = fx+dx, fy+dy
                     if 0 <= nx < W and 0 <= ny < H:
                         dist = max(abs(dx)+abs(dy), 1)
-                        self.smoke_map[ny][nx] = min(
-                            1.0, self.smoke_map[ny][nx] + 0.35/dist
-                        )
-        
-        # Check for patient failure (fire reached patient)
-        fire_set = set(self.fire)
-        for p in self.patients:
-            if not p.evacuated and p.status != "failed":
-                if (p.x, p.y) in fire_set or self.temperature_map[p.y][p.x] > 85:
-                    p.status = "failed"
-                    self.failed_count += 1
-        
-        self.update_firefighters() # Run suppression
+                        self.smoke_map[ff][ny][nx] = min(1.0,
+                            self.smoke_map[ff][ny][nx]+0.35/dist)
         self.tick += 1
 
-    # ── Fire spread prediction ─────────────────────────
     def predict_fire_spread(self, ticks_ahead=3):
-        """Return cells predicted to be on fire in N ticks (not yet burning)."""
         W, H = self.building.width, self.building.height
-        predicted = set(self.fire)
-        current   = set(self.fire)
+        predicted = set((x,y,f) for x,y,f in self.fire)
+        current   = set(predicted)
         dirs = [(1,0),(-1,0),(0,1),(0,-1)]
         for _ in range(ticks_ahead):
             nxt = set()
-            for fx, fy in current:
+            for fx, fy, ff in current:
                 for dx, dy in dirs:
                     nx, ny = fx+dx, fy+dy
-                    if 0 <= nx < W and 0 <= ny < H and (nx,ny) not in predicted:
-                        nxt.add((nx,ny))
+                    if 0 <= nx < W and 0 <= ny < H and (nx,ny,ff) not in predicted:
+                        nxt.add((nx,ny,ff))
             predicted |= nxt
             current = nxt
-        return list(predicted - set(self.fire))
+        return list(predicted - set((x,y,f) for x,y,f in self.fire))
 
-    # ── Firefighter support ───────────────────────────
-    def add_firefighter(self, entry_x, entry_y):
-        ff = Firefighter(len(self.firefighters), entry_x, entry_y)
+    def add_firefighter(self, x, y, floor=0):
+        ff = Firefighter(len(self.firefighters), x, y)
         self.firefighters.append(ff)
         return ff
 
-    def get_safe_entry_points(self):
+    def get_safe_entry_points(self, floor=0):
         W, H = self.building.width, self.building.height
         edges = (
-            [(x, 0) for x in range(W)] +
-            [(x, H-1) for x in range(W)] +
-            [(0, y) for y in range(H)] +
-            [(W-1, y) for y in range(H)]
+            [(x,0,floor) for x in range(W)] +
+            [(x,H-1,floor) for x in range(W)] +
+            [(0,y,floor) for y in range(H)] +
+            [(W-1,y,floor) for y in range(H)]
         )
-        fire_set = set(self.fire)
-        return [
-            (x, y) for x, y in edges
-            if (x,y) not in fire_set and self.smoke_map[y][x] < 0.4
-        ]
+        fire_set = set((x,y,f) for x,y,f in self.fire)
+        return [(x,y,f) for x,y,f in edges
+                if (x,y,f) not in fire_set and self.smoke_map[f][y][x] < 0.4]
+
+
+def build_from_params(width, height, floors, num_patients, num_icu,
+                      num_staff, num_trained, fire_x, fire_y, fire_floor, fire_speed):
+    building = Building(width, height, floors)
+    random.seed(42)
+    W, H = width, height
+    occupied = set()
+    fire_pos = (fire_x, fire_y)
+
+    def rand_pos(fl):
+        for _ in range(200):
+            x = random.randint(1, W-2)
+            y = random.randint(1, H-2)
+            if (x,y,fl) not in occupied and (x,y) != fire_pos:
+                occupied.add((x,y,fl))
+                return x, y
+        return 1, 1
+
+    patients = []
+    for i in range(num_patients):
+        fl = random.randint(0, floors-1)
+        x, y = rand_pos(fl)
+        is_icu = (i < num_icu)
+        patients.append(Patient(i, x, y, floor=fl, movable=not is_icu,
+                                condition="critical" if is_icu else "stable"))
+    staff = []
+    for i in range(num_staff):
+        fl = random.randint(0, floors-1)
+        x, y = rand_pos(fl)
+        trained = (i < num_trained)
+        staff.append(Staff(i, x, y, floor=fl, trained=trained,
+                           role="medic" if trained else "nurse"))
+
+    fire_fl = min(fire_floor, floors-1)
+    return Simulation(building, patients, staff,
+                      fire_origin=(fire_x, fire_y, fire_fl),
+                      fire_speed=fire_speed)

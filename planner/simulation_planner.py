@@ -5,7 +5,7 @@ def _predict_fire_n(fire_cells, fire_severity, width, height, n):
     dirs = [(1,0),(-1,0),(0,1),(0,-1)]
     for _ in range(n):
         nxt = set()
-        for fx, fy in current:
+        for fx, fy, *_ in current:
             for dx, dy in dirs:
                 nx, ny = fx+dx, fy+dy
                 if 0 <= nx < width and 0 <= ny < height and (nx,ny) not in predicted:
@@ -17,7 +17,7 @@ def _predict_fire_n(fire_cells, fire_severity, width, height, n):
 def _patient_risk_after_plan(patient, future_fire, fire_severity):
     """Estimate individual patient risk under a predicted fire scenario."""
     dist = min(
-        (abs(patient.x - fx) + abs(patient.y - fy) for fx, fy in future_fire),
+        (abs(patient.x - fx) + abs(patient.y - fy) for fx, fy, *_ in future_fire),
         default=999
     )
     base_risk = max(0, 10 - dist)
@@ -161,3 +161,4 @@ def run_planner(simulation, ticks_ahead=3):
         "recommended_plan":   best,
         "reasoning":          reasoning,
     }
+
