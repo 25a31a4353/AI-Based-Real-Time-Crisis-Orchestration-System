@@ -33,7 +33,7 @@ def _get_client():
         return _client
     if not _GENAI_AVAILABLE:
         return None
-    api_key = os.environ.get("GEMINI_API_KEY", "")
+    api_key = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
     if not api_key:
         return None
     _client = genai.Client(api_key=api_key)

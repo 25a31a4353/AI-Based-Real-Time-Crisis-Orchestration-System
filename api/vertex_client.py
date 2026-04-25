@@ -31,7 +31,7 @@ def _get_client():
 
     project  = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-    api_key  = os.environ.get("GEMINI_API_KEY", "")
+    api_key  = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
 
     if project:
         # Cloud Run / ADC path — uses Vertex AI backend
