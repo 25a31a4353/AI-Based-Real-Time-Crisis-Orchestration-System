@@ -1,31 +1,22 @@
-# ── Stage 1: slim Python runtime ──────────────────────────────────────────────
-FROM python:3.11-slim AS base
+FROM python:3.10-slim
 
-# Prevents .pyc files and enables unbuffered logging (critical for Cloud Run)
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PORT=8080
+# Prevent Python from buffering stdout/stderr
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# ── Install system deps ────────────────────────────────────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# ── Python deps (cached layer) ─────────────────────────────────────────────────
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── Copy application code ──────────────────────────────────────────────────────
+# Copy all project files explicitly
 COPY . .
 
-# ── Cloud Run listens on $PORT ─────────────────────────────────────────────────
+# Ensure the static folder has correct permissions
+RUN chmod -R 755 /app/static
+
+# Expose the port Cloud Run expects
 EXPOSE 8080
 
-# ── Health check (Cloud Run will also probe /health) ──────────────────────────
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
-
-# ── Entrypoint ─────────────────────────────────────────────────────────────────
-CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 1"]
+# Use uvicorn to run the app
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
