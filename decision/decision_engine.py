@@ -27,9 +27,9 @@ def run_decision_engine(simulation, weights=None):
 
         # ── Factor 1: RISK ─────────────────────────────────
         risk = 0.0
-        for (fx, fy, *_) in simulation.fire:
+        for (fx, fy, f, *_) in simulation.fire:
             dist = abs(p.x - fx) + abs(p.y - fy)
-            sev  = simulation.fire_severity.get((fx, fy), 1)
+            sev  = simulation.fire_severity.get((fx, fy, f), 1)
             if dist == 0:
                 risk += 55 * sev
             elif dist <= 2:

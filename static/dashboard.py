@@ -341,7 +341,7 @@ with st.sidebar:
     st.markdown("**🔥 Fire Settings**")
     fire_x    = st.slider("Fire origin X", 0, grid_w-1, grid_w//2)
     fire_y    = st.slider("Fire origin Y", 0, grid_h-1, grid_h//2)
-    fire_fl   = st.slider("Fire floor", 0, floors-1, 0)
+    fire_fl   = st.slider("Fire floor", 0, floors-1, 0) if floors > 1 else 0
     fire_spd  = st.select_slider("Fire speed", ["Slow","Normal","Fast"], value="Normal")
     spd_map   = {"Slow":1,"Normal":1,"Fast":2}
 
@@ -508,6 +508,28 @@ with tab1:
 
 # ══ TAB 2 — AI REASONING ══════════════════════════════════════════════════════
 with tab2:
+    if sim and sim.fire:
+        fire_cells = sim.fire
+        cx = sum(x for x,y,*_ in fire_cells) / len(fire_cells)
+        cy = sum(y for x,y,*_ in fire_cells) / len(fire_cells)
+        if len(fire_cells) >= 4:
+            new_cells = fire_cells[-min(4,len(fire_cells)):]
+            ncx = sum(x for x,y,*_ in new_cells)/len(new_cells)
+            ncy = sum(y for x,y,*_ in new_cells)/len(new_cells)
+            hdir = "East" if ncx > cx else ("West" if ncx < cx else "")
+            vdir = "South" if ncy > cy else ("North" if ncy < cy else "")
+            direction = f"{vdir}-{hdir}".strip("-") or "Radial"
+        else:
+            direction = "radially"
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0a1e0a,#051510);border:1px solid #22c55e;border-radius:10px;padding:14px 18px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:900;color:#4ade80;letter-spacing:1px;margin-bottom:6px">🤖 GEMMA 4 — AI FIRE ANALYSIS <span class="badge-live" style="float:right;animation:pulse 1.6s infinite">LIVE</span></div>
+          <div style="font-size:13px;color:#86efac;line-height:1.6">
+            Fire is spreading <b>{direction}</b> based on thermal gradient analysis.<br>
+            Fire centroid is at <b>({round(cx,1)}, {round(cy,1)})</b> — zones in this direction require immediate evacuation priority.
+          </div>
+        </div>""", unsafe_allow_html=True)
+
     st.markdown('<div class="slabel">🤖 AI Decision Reasoning (Explainable AI)</div>', unsafe_allow_html=True)
     st.markdown("""
     <div style="background:#0a1020;border:1px solid #1e2a40;border-radius:10px;
@@ -799,3 +821,15 @@ with tab5:
                       <div style="font-family:'JetBrains Mono';font-size:11px;color:#92400e">{cell_str}{more}</div>
                     </div>""", unsafe_allow_html=True)
 
+            st.markdown("---")
+            st.markdown('<div class="slabel">🤝 Coordinated Action Plan (Internal Staff)</div>', unsafe_allow_html=True)
+            if asns.get("assignments"):
+                staff_rooms = [f"Staff <b style='color:#a855f7'>{a['staff_id']}</b> @ Room <b style='color:#e2e8f0'>{a['target_room']}</b> (P{a['patient_id']})" for a in asns["assignments"]]
+                st.markdown(f"""
+                <div style="background:#0f1629;border:1px solid #1e2a40;border-left:4px solid #a855f7;border-radius:8px;padding:12px 14px">
+                  <div style="font-size:12px;color:#cbd5e1;line-height:1.8">
+                    {"<br>".join(staff_rooms)}
+                  </div>
+                </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown('<div style="font-size:12px;color:#475569;padding:10px;background:#0f1629;border:1px solid #1e2a40;border-radius:8px">No active internal staff assignments.</div>', unsafe_allow_html=True)

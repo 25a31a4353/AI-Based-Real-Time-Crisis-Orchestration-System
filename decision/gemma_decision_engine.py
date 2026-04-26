@@ -65,8 +65,8 @@ def predict_fire_direction_gemma(simulation) -> str:
     }
 
     # Average temperature in the 4 quadrants around the centroid
-    cx = sum(x for x, y in fire_cells) / len(fire_cells)
-    cy = sum(y for x, y in fire_cells) / len(fire_cells)
+    cx = sum(x for x, y, *_ in fire_cells) / len(fire_cells)
+    cy = sum(y for x, y, *_ in fire_cells) / len(fire_cells)
     W, H = simulation.building.width, simulation.building.height
 
     def avg_temp(x_range, y_range):
@@ -164,13 +164,13 @@ def _heuristic_direction(simulation) -> str:
     if not fire_cells:
         return "No active fire cells."
 
-    cx = sum(x for x, y in fire_cells) / len(fire_cells)
-    cy = sum(y for x, y in fire_cells) / len(fire_cells)
+    cx = sum(x for x, y, *_ in fire_cells) / len(fire_cells)
+    cy = sum(y for x, y, *_ in fire_cells) / len(fire_cells)
 
     # Use newest fire cells (last 4) to determine direction
     recent = fire_cells[-min(4, len(fire_cells)):]
-    ncx = sum(x for x, y in recent) / len(recent)
-    ncy = sum(y for x, y in recent) / len(recent)
+    ncx = sum(x for x, y, *_ in recent) / len(recent)
+    ncy = sum(y for x, y, *_ in recent) / len(recent)
 
     hdir = "East" if ncx > cx + 0.3 else ("West" if ncx < cx - 0.3 else "")
     vdir = "South" if ncy > cy + 0.3 else ("North" if ncy < cy - 0.3 else "")
@@ -205,7 +205,8 @@ def run_decision_engine_gemma(simulation, weights=None):
     # ── Gemma fire direction prediction ──────────────────
     ai_fire_direction = predict_fire_direction_gemma(simulation)
 
-    predicted_fire = simulation.predict_fire_spread(ticks_ahead=3)
+    predicted_fire_raw = simulation.predict_fire_spread(ticks_ahead=3)
+    predicted_fire = [(x,y) for x,y,f in predicted_fire_raw]
     predicted_set  = set(predicted_fire)
 
     decisions = []
@@ -216,9 +217,9 @@ def run_decision_engine_gemma(simulation, weights=None):
 
         # ── Factor 1: RISK ────────────────────────────────────────────────────
         risk = 0.0
-        for (fx, fy) in simulation.fire:
+        for (fx, fy, f, *_) in simulation.fire:
             dist = abs(p.x - fx) + abs(p.y - fy)
-            sev  = simulation.fire_severity.get((fx, fy), 1)
+            sev  = simulation.fire_severity.get((fx, fy, f), 1)
             if dist == 0:
                 risk += 55 * sev
             elif dist <= 2:
@@ -231,8 +232,9 @@ def run_decision_engine_gemma(simulation, weights=None):
             if dist <= 3:
                 risk += 8 / max(dist, 1)
 
-        temp  = simulation.temperature_map[p.y][p.x]
-        smoke = simulation.smoke_map[p.y][p.x]
+        fl = min(getattr(p, 'floor', 0), simulation.building.floors - 1)
+        temp  = simulation.temperature_map[fl][p.y][p.x]
+        smoke = simulation.smoke_map[fl][p.y][p.x]
         if temp > 55:
             risk += (temp - 55) * 0.6
         risk += smoke * 18
@@ -247,7 +249,7 @@ def run_decision_engine_gemma(simulation, weights=None):
 
         # ── Factor 3: URGENCY ────────────────────────────────────────────────
         min_fire_dist = min(
-            (abs(p.x - fx) + abs(p.y - fy) for fx, fy in simulation.fire),
+            (abs(p.x - fx) + abs(p.y - fy) for fx, fy, *_ in simulation.fire),
             default=999,
         )
         if   min_fire_dist == 0: urgency = 60

@@ -1,11 +1,11 @@
 def _manhattan(ax, ay, bx, by):
     return abs(ax - bx) + abs(ay - by)
 
-def _path_risk(sx, sy, px, py, simulation):
+def _path_risk(sx, sy, px, py, fl, simulation):
     """Estimate danger level of the straight-line path between staff and patient."""
     steps = max(abs(sx - px), abs(sy - py), 1)
     risk  = 0.0
-    fire_set = set((x,y) for x,y,*_ in simulation.fire)
+    fire_set = set((x,y,f) for x,y,f,*_ in simulation.fire if f == fl)
 
     for i in range(steps + 1):
         t  = i / steps
@@ -14,11 +14,10 @@ def _path_risk(sx, sy, px, py, simulation):
         cx = max(0, min(cx, simulation.building.width  - 1))
         cy = max(0, min(cy, simulation.building.height - 1))
 
-        if (cx, cy) in fire_set:
-            sev   = simulation.fire_severity.get((cx, cy), 1)
+        if (cx, cy, fl) in fire_set:
+            sev   = simulation.fire_severity.get((cx, cy, fl), 1)
             risk += 25 * sev
 
-        fl = 0
         smoke = simulation.smoke_map[fl][cy][cx]
         risk += smoke * 8
 
@@ -55,8 +54,9 @@ def run_assignment(simulation, decisions,
             if s.id in used_staff:
                 continue
 
+            fl = min(getattr(patient, "floor", 0), simulation.building.floors - 1)
             dist      = _manhattan(s.x, s.y, patient.x, patient.y)
-            path_risk = _path_risk(s.x, s.y, patient.x, patient.y, simulation)
+            path_risk = _path_risk(s.x, s.y, patient.x, patient.y, fl, simulation)
             load      = getattr(s, "load", 0)
 
             # Skill match bonus
