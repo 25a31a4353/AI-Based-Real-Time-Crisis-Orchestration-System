@@ -14,6 +14,7 @@ remains fully functional even when offline / when the API is unavailable.
 
 import os
 import json
+import threading
 
 # ── Try to import the Google GenAI SDK ───────────────────────────────────────
 try:
@@ -128,15 +129,31 @@ Answer in exactly 2 sentences:
 Be concise and authoritative. Do NOT include disclaimers."""
 
     try:
-        response = client.models.generate_content(
-            model="gemma-3-27b-it",   # Gemma 4 / latest available via API
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                max_output_tokens=150,
-            ),
-        )
-        return response.text.strip()
+        result = [None]
+        exc    = [None]
+
+        def _call():
+            try:
+                resp = client.models.generate_content(
+                    model="gemma-3-27b-it",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.3,
+                        max_output_tokens=150,
+                    ),
+                )
+                result[0] = resp.text.strip()
+            except Exception as e:
+                exc[0] = e
+
+        t = threading.Thread(target=_call, daemon=True)
+        t.start()
+        t.join(timeout=4.0)   # 4-second hard cap — UI never freezes
+
+        if t.is_alive() or exc[0]:
+            reason = str(exc[0]) if exc[0] else "timeout"
+            return f"[Gemma {reason}] " + _heuristic_direction(simulation)
+        return result[0]
     except Exception as exc:
         return f"[Gemma unavailable: {exc}] " + _heuristic_direction(simulation)
 

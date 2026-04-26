@@ -35,12 +35,15 @@ button[data-testid="baseButton-secondary"]{background:#151c2c!important;border:1
 .slabel{font-size:10px;font-weight:800;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #1a2235;}
 .gwrap{background:#0c1120;border:1px solid #1e2a40;border-radius:12px;padding:14px;overflow-x:auto;}
 .grow{display:flex;gap:2px;margin-bottom:2px;}
-.gc{width:40px;height:40px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:15px;position:relative;border:1px solid transparent;flex-shrink:0;}
+.gc{width:40px;height:40px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:15px;position:relative;border:1px solid transparent;flex-shrink:0;transition:background 0.3s ease,box-shadow 0.3s ease,border-color 0.3s ease;}
 .gc-empty{background:#111827;border-color:#1f2937;}
 .gc-fire{background:#3b0a0a;border-color:#ef4444;box-shadow:0 0 8px #ef444460;}
 .gc-fire2{background:#5a0000;border-color:#ff6b6b;box-shadow:0 0 12px #ff6b6b70;}
 .gc-pred{background:#2d2000;border-color:#eab308;box-shadow:0 0 4px #eab30840;}
 .gc-smoke{background:#1f1500;border-color:#92400e;}
+.gc-new-fire{animation:fireFlash 0.8s ease-out;}
+@keyframes fireFlash{0%{box-shadow:0 0 20px #ff4400,0 0 40px #ff4400;transform:scale(1.1);}100%{transform:scale(1);}}
+.updated-badge{display:inline-block;background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:20px;letter-spacing:1px;animation:pulse 1s 3;margin-left:8px;}
 .gc-icu{background:#0a1e3b;border-color:#3b82f6;box-shadow:0 0 6px #3b82f640;}
 .gc-mob{background:#082018;border-color:#22c55e;}
 .gc-staff{background:#1a0a3b;border-color:#a855f7;box-shadow:0 0 5px #a855f740;}
@@ -85,9 +88,14 @@ button[data-testid="baseButton-secondary"]{background:#151c2c!important;border:1
 
 # ── Session state ─────────────────────────────────────────────────────────────
 def _init():
-    defaults = dict(sim=None, verifier=None, decisions=[], assignments={"assignments":[]},
-                    verification={}, plan=None, ff_briefing=None, log=[],
-                    ff_joined=False, initialized=False, view_floor=0)
+    defaults = dict(
+        sim=None, verifier=None, decisions=[], assignments={"assignments":[]},
+        verification={}, plan=None, ff_briefing=None, log=[],
+        ff_joined=False, initialized=False, view_floor=0,
+        prev_decisions={},     # {patient_id: priority} from last tick
+        fire_new_cells=set(),  # cells that caught fire this tick (for flash)
+        tick_updated=False,    # flag to show "Updated this tick" badge
+    )
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -96,18 +104,34 @@ _init()
 def do_tick():
     sim   = st.session_state.sim
     verif = st.session_state.verifier
+
+    # Snapshot fire before update to detect new cells
+    fire_before = set((x,y,f) for x,y,f in sim.fire)
+
     sim.update_fire()
+
+    # Track newly spread fire cells for flash animation
+    fire_after = set((x,y,f) for x,y,f in sim.fire)
+    st.session_state.fire_new_cells = fire_after - fire_before
+
+    # Snapshot previous priorities for "what changed" diff
+    prev = {d["patient_id"]: d["priority"] for d in st.session_state.decisions}
+    st.session_state.prev_decisions = prev
+
     decisions   = run_decision_engine(sim)
     assignments = run_assignment(sim, decisions)
     verif.register_assignments(assignments, sim.tick)
     verification = verif.verify_tick(sim, sim.tick)
     plan        = run_planner(sim)
     ff_briefing = get_firefighter_briefing(sim)
+
     st.session_state.decisions    = decisions
     st.session_state.assignments  = assignments
     st.session_state.verification = verification
     st.session_state.plan         = plan
     st.session_state.ff_briefing  = ff_briefing
+    st.session_state.tick_updated = True
+
     vcounts = verif.summary()
     fire_n  = len(sim.fire)
     ai_remark = ""
@@ -124,7 +148,7 @@ def do_tick():
     )
 
 # ── Grid renderer ─────────────────────────────────────────────────────────────
-def render_grid(sim, floor=0, predicted_fire=None):
+def render_grid(sim, floor=0, predicted_fire=None, fire_new_cells=None):
     predicted_set = set((x,y,f) for x,y,f in (predicted_fire or []) if f == floor)
     fire_set   = set((x,y) for x,y,f in sim.fire if f == floor)
     fire_sev   = {(x,y): sev for (x,y,f),sev in sim.fire_severity.items() if f == floor}
@@ -133,12 +157,14 @@ def render_grid(sim, floor=0, predicted_fire=None):
     ff_pos     = {(f.x,f.y): f for f in sim.firefighters}
     exits      = set(sim.building.exits)
     pred2d     = set((x,y) for x,y,f in predicted_set)
+    new_2d     = set((x,y) for x,y,f in (fire_new_cells or set()) if f == floor)
 
     html = '<div class="gwrap"><div>'
     for y in range(sim.building.height):
         html += '<div class="grow">'
         for x in range(sim.building.width):
             pos = (x, y)
+            extra_cls = " gc-new-fire" if pos in new_2d else ""
             if pos in fire_set:
                 sev  = fire_sev.get(pos, 1)
                 cls  = "gc-fire2" if sev >= 3 else "gc-fire"
@@ -153,21 +179,21 @@ def render_grid(sim, floor=0, predicted_fire=None):
                 icon = "🏥" if not p.movable else "🧍"
                 cls  = "gc-icu" if not p.movable else "gc-mob"
             elif pos in pred2d:
-                icon = "⚠️"; cls = "gc-pred"
+                icon = "🟠"; cls = "gc-pred"   # predicted fire
             elif sim.smoke_map[floor][y][x] > 0.35:
-                icon = "💨"; cls = "gc-smoke"
+                icon = "💨"; cls = "gc-smoke"   # smoke
             elif pos in exits:
                 icon = "🚪"; cls = "gc-exit"
             else:
                 icon = ""; cls = "gc-empty"
-            html += f'<div class="gc {cls}" title="{x},{y}">{icon}<span class="coord">{x},{y}</span></div>'
+            html += f'<div class="gc {cls}{extra_cls}" title="{x},{y}">{icon}<span class="coord">{x},{y}</span></div>'
         html += '</div>'
     html += '''</div>
     <div class="legend">
       <div class="li"><div class="ld" style="background:#ff6b6b"></div>Fire (intense)</div>
       <div class="li"><div class="ld" style="background:#ef4444"></div>Fire</div>
-      <div class="li"><div class="ld" style="background:#eab308"></div>Predicted (3 ticks)</div>
-      <div class="li"><div class="ld" style="background:#92400e"></div>Smoke</div>
+      <div class="li"><div class="ld" style="background:#eab308"></div>🟠 Predicted (3 ticks)</div>
+      <div class="li"><div class="ld" style="background:#92400e"></div>💨 Smoke</div>
       <div class="li"><div class="ld" style="background:#3b82f6"></div>ICU Patient</div>
       <div class="li"><div class="ld" style="background:#22c55e"></div>Mobile Patient</div>
       <div class="li"><div class="ld" style="background:#a855f7"></div>Staff</div>
@@ -175,6 +201,7 @@ def render_grid(sim, floor=0, predicted_fire=None):
       <div class="li"><div class="ld" style="background:#4ade80"></div>Exit</div>
     </div></div>'''
     return html
+
 
 def render_priorities(decisions, patients):
     mob_map = {p.id: p.movable for p in patients}
@@ -225,9 +252,10 @@ def render_assignments(assignments_data):
         html = '<div style="color:#334155;font-size:13px;padding:10px">Run a tick to see assignments.</div>'
     return html
 
-def build_ai_reasoning(decisions, assignments_data, sim, plan_result):
-    """Generate human-readable AI reasoning steps."""
+def build_ai_reasoning(decisions, assignments_data, sim, plan_result, prev_decisions=None):
+    """Generate human-readable AI reasoning steps with tick-over-tick diffs."""
     steps = []
+    prev = prev_decisions or {}
     fire_n = len(sim.fire)
     steps.append(f"Fire detected — {fire_n} active cells spreading across the building.")
 
@@ -237,17 +265,37 @@ def build_ai_reasoning(decisions, assignments_data, sim, plan_result):
     if decisions:
         top = decisions[0]
         e   = top["explanation"]
+        pid = top["patient_id"]
         why = []
         if top["is_icu"]:
-            why.append("immobile (ICU)")
+            why.append(f"ICU/immobile (immobility score={e['immobility_score']})")
         if e["min_fire_dist"] <= 3:
-            why.append(f"fire only {e['min_fire_dist']} cells away")
+            why.append(f"fire only {e['min_fire_dist']} cells away (urgency={e['urgency_score']})")
         if e["smoke_level"] > 0.3:
             why.append(f"smoke level {e['smoke_level']:.2f}")
+        if e["risk_score"] > 20:
+            why.append(f"high risk score={e['risk_score']}")
         steps.append(
-            f"Patient {top['patient_id']} assigned highest priority (score {top['priority']}) "
-            f"because: {', '.join(why) if why else 'highest combined risk score'}."
+            f"Patient {pid} is highest priority (score {top['priority']}) because: "
+            f"{', '.join(why) if why else 'highest combined risk score'}."
         )
+
+    # What changed since last tick
+    if prev:
+        changed = []
+        for d in decisions:
+            pid   = d["patient_id"]
+            old_s = prev.get(pid)
+            new_s = d["priority"]
+            if old_s is None:
+                changed.append(f"P{pid}: NEW (score {new_s})")
+            elif abs(new_s - old_s) >= 1.0:
+                arrow = "↑" if new_s > old_s else "↓"
+                changed.append(f"P{pid}: {arrow} {old_s}→{new_s}")
+        if changed:
+            steps.append("Priority changes this tick: " + " | ".join(changed))
+        else:
+            steps.append("No significant priority changes from previous tick.")
 
     for a in assignments_data.get("assignments", []):
         bd   = a.get("cost_breakdown", {})
@@ -259,14 +307,20 @@ def build_ai_reasoning(decisions, assignments_data, sim, plan_result):
         )
 
     if plan_result and plan_result.get("recommended_plan"):
-        p = plan_result["recommended_plan"]
+        p      = plan_result["recommended_plan"]
+        others = [r for r in plan_result.get("plans", []) if not r.get("recommended")]
+        reason = f"survival {p['survival_probability']}%"
+        if others:
+            vs = " vs ".join(f"{o['name']} ({o['survival_probability']}%)" for o in others)
+            reason += f" — beats {vs}"
         steps.append(
-            f"AI Planner selected '{p['name']}' — "
-            f"survival probability {p['survival_probability']}% "
-            f"(best among 3 simulated plans)."
+            f"AI Planner selected '{p['name']}' — {reason}. "
+            f"({p['patients_at_risk']} patients at risk, "
+            f"{p['fire_cells_predicted']} predicted fire cells)"
         )
 
     return steps
+
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -426,9 +480,15 @@ with tab1:
     c1, c2 = st.columns([3,2], gap="medium")
 
     with c1:
-        st.markdown(f'<div class="slabel">Building Map — Floor {vfloor}</div>', unsafe_allow_html=True)
+        updated = st.session_state.get("tick_updated", False)
+        badge   = '<span class="updated-badge">UPDATED THIS TICK</span>' if updated else ""
+        st.markdown(f'<div class="slabel">Building Map — Floor {vfloor}{badge}</div>', unsafe_allow_html=True)
         predicted = sim.predict_fire_spread(3) if sim.fire else []
-        st.markdown(render_grid(sim, floor=vfloor, predicted_fire=predicted), unsafe_allow_html=True)
+        fire_new  = st.session_state.get("fire_new_cells", set())
+        st.markdown(render_grid(sim, floor=vfloor, predicted_fire=predicted, fire_new_cells=fire_new), unsafe_allow_html=True)
+        # Reset badge after render
+        if updated:
+            st.session_state.tick_updated = False
 
     with c2:
         st.markdown('<div class="slabel">Priority Decisions</div>', unsafe_allow_html=True)
@@ -459,7 +519,8 @@ with tab2:
     </div>""", unsafe_allow_html=True)
 
     if decs:
-        steps = build_ai_reasoning(decs, asns, sim, st.session_state.plan)
+        steps = build_ai_reasoning(decs, asns, sim, st.session_state.plan,
+                                    prev_decisions=st.session_state.get("prev_decisions", {}))
         steps_html = "".join(
             f'<div class="ai-step"><div class="ai-dot"></div>'
             f'<div class="ai-text">{s}</div></div>'
