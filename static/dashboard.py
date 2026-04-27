@@ -16,16 +16,19 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
 html,[class*="css"]{font-family:'Inter',sans-serif;}
-.stApp{background:#090d17;}
-.block-container{padding:1.2rem 1.8rem 2rem!important;max-width:100%!important;}
+.stApp{background:#090d17;overflow:visible!important;}
+.block-container{padding:2.5rem 1.8rem 2rem!important;max-width:100%!important;overflow:visible!important;}
 button[data-testid="baseButton-primary"]{background:linear-gradient(135deg,#ef4444,#b91c1c)!important;border:none!important;color:#fff!important;font-weight:700!important;}
 button[data-testid="baseButton-secondary"]{background:#151c2c!important;border:1px solid #2a3348!important;color:#cbd5e1!important;font-weight:600!important;}
-.hdr{background:linear-gradient(135deg,#0f1629,#0a0f1e);border:1px solid #1e2a40;border-radius:14px;padding:18px 26px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;}
+.hdr{background:linear-gradient(135deg,#0f1629,#0a0f1e);border:1px solid #1e2a40;border-radius:14px;padding:18px 26px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;position:relative;}
+@media (max-width: 768px) { .team-badge-header { display: none !important; } }
 .hdr-title{font-size:20px;font-weight:900;color:#f1f5f9;letter-spacing:-.3px;}
 .hdr-sub{font-size:12px;color:#475569;margin-top:3px;}
 .badge-live{background:#ef4444;color:#fff;font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;letter-spacing:1px;animation:pulse 1.6s infinite;}
 .badge-tick{background:#1e2a40;color:#94a3b8;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;font-family:'JetBrains Mono';}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes fadeInEvent{from{opacity:0;transform:translateX(-10px);}to{opacity:1;transform:translateX(0);}}
+.story-row{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #1e2a40;animation:fadeInEvent 0.4s ease-out;}
 .stats{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
 .sc{flex:1;min-width:100px;background:#0f1629;border:1px solid #1e2a40;border-radius:11px;padding:13px 16px;}
 .sc-label{font-size:10px;color:#475569;font-weight:700;letter-spacing:.8px;text-transform:uppercase;}
@@ -39,7 +42,13 @@ button[data-testid="baseButton-secondary"]{background:#151c2c!important;border:1
 .gc-empty{background:#111827;border-color:#1f2937;}
 .gc-fire{background:#3b0a0a;border-color:#ef4444;box-shadow:0 0 8px #ef444460;}
 .gc-fire2{background:#5a0000;border-color:#ff6b6b;box-shadow:0 0 12px #ff6b6b70;}
-.gc-pred{background:#2d2000;border-color:#eab308;box-shadow:0 0 4px #eab30840;}
+.gc-pred{background:#2d2000;border:2px solid #eab308!important;box-shadow:0 0 8px #eab30860;animation:pulse-warn 2s infinite;}
+@keyframes pulse-warn{0%,100%{opacity:1}50%{opacity:.6}}
+.priority-badge{position:absolute;top:2px;right:2px;width:8px;height:8px;border-radius:50%;border:1px solid rgba(255,255,255,.3);}
+.badge-critical{background:#ef4444;box-shadow:0 0 6px #ef4444;}
+.badge-high{background:#f97316;}
+.badge-medium{background:#84cc16;}
+.badge-low{background:#64748b;}
 .gc-smoke{background:#1f1500;border-color:#92400e;}
 .gc-new-fire{animation:fireFlash 0.8s ease-out;}
 @keyframes fireFlash{0%{box-shadow:0 0 20px #ff4400,0 0 40px #ff4400;transform:scale(1.1);}100%{transform:scale(1);}}
@@ -95,6 +104,8 @@ def _init():
         prev_decisions={},     # {patient_id: priority} from last tick
         fire_new_cells=set(),  # cells that caught fire this tick (for flash)
         tick_updated=False,    # flag to show "Updated this tick" badge
+        initial_risk=None,     # baseline risk at tick 0 for reduction metric
+        timeline=[],           # rich narrative timeline events
     )
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -147,8 +158,59 @@ def do_tick():
         f"❌ {vcounts.get('failed',0)} failed{ai_remark}"
     )
 
+    # ── CRISIS TIMELINE EVENT GENERATION ──────────────────────────────────────
+    events = []
+    t_val = sim.tick
+
+    # 1. Fire Events
+    if len(fire_after) > len(fire_before):
+        new_count = len(fire_after) - len(fire_before)
+        events.append({"tick": t_val, "icon": "🔥", "color": "#ef4444", "msg": f"Fire spread detected — {new_count} new cells ignited."})
+    
+    # 2. Patient & AI Events
+    if decisions:
+        for d in decisions:
+            pid = d["patient_id"]
+            np  = d["priority"]
+            op  = prev.get(pid)
+            lvl = d["explanation"]["priority_level"]
+            if op and np > op + 1.0 and lvl == "critical":
+                events.append({"tick": t_val, "icon": "🏥", "color": "#ef4444", "msg": f"Patient {pid} risk increased to CRITICAL due to environment."})
+
+        if plan and plan.get("recommended_plan"):
+            p_name = plan["recommended_plan"]["name"]
+            surv = plan["recommended_plan"]["survival_probability"]
+            events.append({"tick": t_val, "icon": "🤖", "color": "#22c55e", "msg": f"AI selected '{p_name}' — {surv}% survival probability."})
+
+    # 3. Staff Events
+    if assignments.get("assignments"):
+        for a in assignments["assignments"]:
+            pid = a["patient_id"]
+            sid = a["staff_id"]
+            if "rerouted" in a.get("route_note", "").lower():
+                events.append({"tick": t_val, "icon": "👷", "color": "#a855f7", "msg": f"Staff {sid} rerouted due to fire obstruction."})
+            elif t_val == a.get("assigned_tick", t_val):
+                events.append({"tick": t_val, "icon": "👷", "color": "#a855f7", "msg": f"Staff {sid} assigned to Patient {pid} — route clear."})
+
+    # 6. Verification Events
+    for tid, t in verif.tasks.items():
+        if t["status"] in ("completed", "likely_complete") and t_val == t.get("completed_tick", t_val):
+            events.append({"tick": t_val, "icon": "✅", "color": "#22c55e", "msg": f"Task {tid} completed — Patient {t['patient_id']} rescue verified."})
+        elif t["status"] == "failed" and t_val == t.get("failed_tick", t_val):
+            events.append({"tick": t_val, "icon": "❌", "color": "#ef4444", "msg": f"Task {tid} failed — deadline exceeded, triggering reassignment."})
+
+    # 5. Firefighter Events
+    if ff_briefing and len(ff_briefing.get("critical_patients", [])) > 0:
+        if t_val % 3 == 0:  # Prevent spamming every tick
+            events.append({"tick": t_val, "icon": "🚒", "color": "#f59e0b", "msg": f"Firefighter briefing updated — {len(ff_briefing['critical_patients'])} critical patients identified."})
+
+    st.session_state.timeline.extend(events)
+
 # ── Grid renderer ─────────────────────────────────────────────────────────────
-def render_grid(sim, floor=0, predicted_fire=None, fire_new_cells=None):
+_priority_map = {}   # module-level, set by render_grid each call
+def render_grid(sim, floor=0, predicted_fire=None, fire_new_cells=None, priority_map=None):
+    global _priority_map
+    _priority_map = priority_map or {}
     predicted_set = set((x,y,f) for x,y,f in (predicted_fire or []) if f == floor)
     fire_set   = set((x,y) for x,y,f in sim.fire if f == floor)
     fire_sev   = {(x,y): sev for (x,y,f),sev in sim.fire_severity.items() if f == floor}
@@ -165,6 +227,7 @@ def render_grid(sim, floor=0, predicted_fire=None, fire_new_cells=None):
         for x in range(sim.building.width):
             pos = (x, y)
             extra_cls = " gc-new-fire" if pos in new_2d else ""
+            badge_html = ""
             if pos in fire_set:
                 sev  = fire_sev.get(pos, 1)
                 cls  = "gc-fire2" if sev >= 3 else "gc-fire"
@@ -178,27 +241,31 @@ def render_grid(sim, floor=0, predicted_fire=None, fire_new_cells=None):
                 p = pat_pos[pos]
                 icon = "🏥" if not p.movable else "🧍"
                 cls  = "gc-icu" if not p.movable else "gc-mob"
+                lvl  = _priority_map.get(p.id, "low")
+                badge_html = f'<span class="priority-badge badge-{lvl}"></span>'
             elif pos in pred2d:
-                icon = "🟠"; cls = "gc-pred"   # predicted fire
+                icon = "⚠️"; cls = "gc-pred"   # predicted fire
             elif sim.smoke_map[floor][y][x] > 0.35:
                 icon = "💨"; cls = "gc-smoke"   # smoke
             elif pos in exits:
                 icon = "🚪"; cls = "gc-exit"
             else:
                 icon = ""; cls = "gc-empty"
-            html += f'<div class="gc {cls}{extra_cls}" title="{x},{y}">{icon}<span class="coord">{x},{y}</span></div>'
+            html += f'<div class="gc {cls}{extra_cls}" title="{x},{y}">{icon}{badge_html}<span class="coord">{x},{y}</span></div>'
         html += '</div>'
     html += '''</div>
     <div class="legend">
       <div class="li"><div class="ld" style="background:#ff6b6b"></div>Fire (intense)</div>
       <div class="li"><div class="ld" style="background:#ef4444"></div>Fire</div>
-      <div class="li"><div class="ld" style="background:#eab308"></div>🟠 Predicted (3 ticks)</div>
+      <div class="li"><div class="ld" style="background:#eab308;border:1px solid #eab308"></div>⚠️ Predicted (3 ticks)</div>
       <div class="li"><div class="ld" style="background:#92400e"></div>💨 Smoke</div>
       <div class="li"><div class="ld" style="background:#3b82f6"></div>ICU Patient</div>
       <div class="li"><div class="ld" style="background:#22c55e"></div>Mobile Patient</div>
       <div class="li"><div class="ld" style="background:#a855f7"></div>Staff</div>
       <div class="li"><div class="ld" style="background:#f59e0b"></div>Firefighter</div>
       <div class="li"><div class="ld" style="background:#4ade80"></div>Exit</div>
+      <div class="li"><div class="ld" style="background:#ef4444;border-radius:50%"></div>● Critical</div>
+      <div class="li"><div class="ld" style="background:#f97316;border-radius:50%"></div>● High</div>
     </div></div>'''
     return html
 
@@ -322,6 +389,85 @@ def build_ai_reasoning(decisions, assignments_data, sim, plan_result, prev_decis
     return steps
 
 
+def build_live_reasoning(decisions, assignments_data, sim, plan_result, prev_decisions=None):
+    """Generate 4-6 plain-English bullets for the AI DECISION ENGINE panel."""
+    bullets = []
+    prev = prev_decisions or {}
+    fire_cells = list(sim.fire)
+
+    # 1. Fire status
+    if fire_cells:
+        cx = sum(x for x,y,*_ in fire_cells)/len(fire_cells)
+        cy = sum(y for x,y,*_ in fire_cells)/len(fire_cells)
+        if len(fire_cells) >= 4:
+            rc = fire_cells[-max(4,len(fire_cells)//4):]
+            rcx = sum(x for x,y,*_ in rc)/len(rc); rcy = sum(y for x,y,*_ in rc)/len(rc)
+            hd = "East" if rcx>cx+0.3 else ("West" if rcx<cx-0.3 else "")
+            vd = "South" if rcy>cy+0.3 else ("North" if rcy<cy-0.3 else "")
+            dirn = (f"{vd}-{hd}").strip("-") or "RADIAL"
+        else:
+            dirn = "RADIAL"
+        sv = list(sim.fire_severity.values())
+        slo,shi = (min(sv),max(sv)) if sv else (1,1)
+        bullets.append(f"🔥 Fire spreading <b>{dirn}</b> from centroid ({round(cx,1)},{round(cy,1)}) — <b>{len(fire_cells)}</b> cells active, severity {slo}–{shi}")
+    else:
+        bullets.append("🔥 No active fire cells at this tick.")
+
+    # 2. Predicted expansion
+    predicted = sim.predict_fire_spread(3) if sim.fire else []
+    if predicted:
+        samp = ", ".join(f"({x},{y})" for x,y,*_ in predicted[:4])
+        more = f" +{len(predicted)-4} more" if len(predicted)>4 else ""
+        bullets.append(f"📊 Predicted expansion: <b>{len(predicted)}</b> new cells in 3 ticks → {samp}{more}")
+
+    # 3. Top patient risk delta
+    if decisions:
+        top=decisions[0]; pid=top["patient_id"]; new_s=top["priority"]; old_s=prev.get(pid)
+        e=top["explanation"]
+        rs=[]
+        if e["smoke_level"]>0.3: rs.append(f"smoke {e['smoke_level']:.2f}")
+        if e["min_fire_dist"]<=3: rs.append(f"fire {e['min_fire_dist']} cells away")
+        if top["is_icu"]: rs.append("ICU/immobile")
+        reason = " & ".join(rs) if rs else "combined risk"
+        if old_s and abs(new_s-old_s)>=1.0:
+            pct=round(abs(new_s-old_s)/max(old_s,1)*100)
+            word="increased" if new_s>old_s else "decreased"
+            bullets.append(f"⚠️ Patient <b>{pid}</b> risk <b>{word}</b> by {pct}% due to {reason}")
+        else:
+            bullets.append(f"⚠️ Patient <b>{pid}</b> highest priority (score <b>{new_s}</b>) — {reason}")
+
+    # 4. Staff assignment reasoning
+    alist = assignments_data.get("assignments",[])
+    if alist:
+        rerouted=[a for a in alist if "rerouted" in a.get("route_note","").lower()]
+        a = rerouted[0] if rerouted else alist[0]
+        bd=a.get("cost_breakdown",{})
+        if rerouted:
+            bullets.append(f"🎯 AI rerouted Staff <b>{a['staff_id']}</b> → Patient <b>{a['patient_id']}</b> (fire blocked path, cost={bd.get('total_cost','?')})")
+        else:
+            bullets.append(f"🎯 AI assigned Staff <b>{a['staff_id']}</b> → Patient <b>{a['patient_id']}</b> (dist={bd.get('distance','?')}, skill_bonus={bd.get('skill_bonus',0)})")
+
+    # 5. Route ETA
+    if alist:
+        clear=[a for a in alist if "✅" in a.get("route_note","")]
+        rr=[a for a in alist if "rerouted" in a.get("route_note","").lower()]
+        if clear:
+            a=clear[0]; eta=int(a.get("cost_breakdown",{}).get("distance",2))
+            bullets.append(f"✅ Staff <b>{a['staff_id']}</b> route clear — ETA <b>{eta}</b> ticks to Patient <b>{a['patient_id']}</b>")
+        elif rr:
+            a=rr[0]
+            bullets.append(f"⚠️ Staff <b>{a['staff_id']}</b> rerouted — fire blocked direct path to Patient <b>{a['patient_id']}</b>")
+
+    # 6. Planner
+    if plan_result and plan_result.get("recommended_plan"):
+        p=plan_result["recommended_plan"]
+        others=[r for r in plan_result.get("plans",[]) if not r.get("recommended")]
+        vs=" vs ".join(f"{o['name']} ({o['survival_probability']}%)" for o in others)
+        bullets.append(f"🤖 AI Planner selected '<b>{p['name']}</b>' — <b>{p['survival_probability']}%</b> survival" + (f" vs {vs}" if vs else ""))
+
+    return bullets[:6]
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div style="font-size:17px;font-weight:900;color:#f1f5f9;margin-bottom:2px">⚡ CrisisAI</div>', unsafe_allow_html=True)
@@ -361,10 +507,56 @@ with st.sidebar:
         st.session_state.plan        = None
         st.session_state.ff_briefing = None
         st.session_state.log         = [f"[Init] System started. Fire at ({fire_x},{fire_y}) Floor {fire_fl}. {num_pat} patients, {num_staff} staff."]
+        st.session_state.timeline    = []
         st.session_state.ff_joined   = False
         st.session_state.initialized = True
         st.session_state.view_floor  = 0
+        st.session_state.initial_risk= None
         st.rerun()
+
+    st.markdown("""
+    <div style="background:#0a0f1e; border-top:2px solid #1e2a40; padding:16px 14px; margin-top:20px; border-radius:0 0 12px 12px;">
+      <div style="font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:12px;">
+        👥 TEAM INFORMATION
+      </div>
+      <div style="background:#1e2a40; border-radius:12px; padding:4px 10px; display:inline-block; margin-bottom:16px;">
+        <span style="font-size:10px; font-weight:700; color:#ffffff;">🎓 Pragati Engineering College</span>
+      </div>
+      <!-- Leader -->
+      <div style="display:flex; align-items:flex-start; margin-bottom:8px; border-left:2px solid #eab308; padding-left:8px;">
+        <div style="flex-grow:1;">
+          <div style="font-size:11px; font-weight:700; color:#eab308; display:flex; align-items:center; gap:6px;">
+            ⭐ Shanmukheswar Medicharla <span style="background:#eab308; color:#000; font-size:8px; font-weight:800; padding:1px 6px; border-radius:10px;">TEAM LEADER</span>
+          </div>
+          <div style="font-size:9px; color:#64748b; font-family:'JetBrains Mono'; user-select:none;">shanmukheswaramedicharla9604@gmail.com</div>
+        </div>
+      </div>
+      <!-- Member 2 -->
+      <div style="display:flex; align-items:flex-start; margin-bottom:8px; padding-left:10px;">
+        <div style="flex-grow:1;">
+          <div style="font-size:11px; font-weight:700; color:#ffffff;">👤 Vedavyas Borra</div>
+          <div style="font-size:9px; color:#64748b; font-family:'JetBrains Mono'; user-select:none;">vedavyasborra@gmail.com</div>
+        </div>
+      </div>
+      <!-- Member 3 -->
+      <div style="display:flex; align-items:flex-start; margin-bottom:8px; padding-left:10px;">
+        <div style="flex-grow:1;">
+          <div style="font-size:11px; font-weight:700; color:#ffffff;">👤 Kota Pardhasaradhi</div>
+          <div style="font-size:9px; color:#64748b; font-family:'JetBrains Mono'; user-select:none;">kotapardhasaradhi5@gmail.com</div>
+        </div>
+      </div>
+      <!-- Member 4 -->
+      <div style="display:flex; align-items:flex-start; margin-bottom:8px; padding-left:10px;">
+        <div style="flex-grow:1;">
+          <div style="font-size:11px; font-weight:700; color:#ffffff;">👤 Harshith Kotha</div>
+          <div style="font-size:9px; color:#64748b; font-family:'JetBrains Mono'; user-select:none;">kothaharshith75@gmail.com</div>
+        </div>
+      </div>
+      <div style="text-align:center; font-size:9px; font-style:italic; color:#475569; margin-top:16px;">
+        Built for Google Solution Challenge 2025
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     if st.session_state.initialized:
         st.markdown("---")
@@ -387,6 +579,7 @@ with st.sidebar:
             st.session_state.ff_joined   = True
             st.session_state.ff_briefing = get_firefighter_briefing(sim)
             st.session_state.log.append(f"[Tick {sim.tick}] 🚒 Firefighters joined at {[(e[0],e[1]) for e in entries[:2]]}")
+            st.session_state.timeline.append({"tick": sim.tick, "icon": "🚒", "color": "#f59e0b", "msg": f"Firefighters arrived — {len(entries[:2])} units deployed at safe entries."})
             st.rerun()
 
         st.markdown("---")
@@ -402,6 +595,82 @@ with st.sidebar:
                         f'Firefighters: <b style="color:#f59e0b">{len(sim.firefighters)}</b>'
                         f'</div>', unsafe_allow_html=True)
 
+# ── Impact Metrics Banner ─────────────────────────────────────────────────────
+_sim = st.session_state.get("sim")
+_decs = st.session_state.get("decisions", [])
+_plan = st.session_state.get("plan")
+_verif = st.session_state.get("verifier")
+
+# 1. Patients Rescued
+rescued = 0
+total_p = len(_sim.patients) if _sim else 0
+if _sim:
+    completed_pids = set()
+    if _verif:
+        for t in _verif.tasks.values():
+            if t["status"] in ("completed", "likely_complete"):
+                completed_pids.add(t["patient_id"])
+    for p in _sim.patients:
+        if getattr(p, "evacuated", False) or p.id in completed_pids:
+            rescued += 1
+pct_rescued = round((rescued / total_p * 100) if total_p > 0 else 0, 1)
+
+# 2. Risk Reduction
+current_risk = sum(d.get("priority", 0) for d in _decs) if _decs else 0
+if st.session_state.get("initial_risk") is None and current_risk > 0:
+    st.session_state.initial_risk = current_risk
+init_risk = st.session_state.get("initial_risk") or 0
+if init_risk > 0:
+    reduction = round(((init_risk - current_risk) / init_risk) * 100, 1)
+    reduction = max(0.0, min(100.0, reduction))
+else:
+    reduction = 0.0
+
+# 3. Response Time
+avg_ticks_str = "N/A"
+if _verif:
+    completed_tasks = [t for t in _verif.tasks.values() if t["status"] in ("completed", "likely_complete")]
+    if completed_tasks:
+        diffs = [t.get("completed_tick", _sim.tick) - t["assigned_tick"] for t in completed_tasks]
+        avg = sum(diffs) / len(diffs) if diffs else 0
+        avg_ticks_str = f"{avg:.1f} ticks"
+
+# 4. AI Efficiency
+efficiency = "N/A"
+if _plan and _plan.get("recommended_plan"):
+    efficiency = f"{_plan['recommended_plan'].get('survival_probability', 'N/A')}%"
+
+# Border Glow logic
+b_color = "#22c55e" if pct_rescued >= 80 else ("#3b82f6" if pct_rescued >= 50 else "#f97316")
+
+st.markdown(f"""
+<div style="background:linear-gradient(135deg, #0c1120, #0a1e0a); border: 2px solid {b_color}; border-radius: 12px; padding: 16px 24px; margin-top: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+  <!-- METRIC 1 -->
+  <div style="flex: 1; min-width: 150px;">
+    <div style="font-size: 10px; color: #22c55e; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px;">🚑 PATIENTS RESCUED</div>
+    <div style="font-size: 32px; font-weight: 900; color: #22c55e; font-family: 'JetBrains Mono', monospace; line-height: 1;">
+      {rescued} / {total_p}
+      <span style="font-size: 14px; color: #64748b; font-weight: 600; font-family: 'Inter', sans-serif;"> ({pct_rescued}%)</span>
+    </div>
+  </div>
+  <!-- METRIC 2 -->
+  <div style="flex: 1; min-width: 150px;">
+    <div style="font-size: 10px; color: #3b82f6; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px;">📉 TOTAL RISK REDUCTION</div>
+    <div style="font-size: 32px; font-weight: 900; color: #3b82f6; font-family: 'JetBrains Mono', monospace; line-height: 1;">{reduction}%</div>
+  </div>
+  <!-- METRIC 3 -->
+  <div style="flex: 1; min-width: 150px;">
+    <div style="font-size: 10px; color: #eab308; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px;">⚡ AVG RESPONSE TIME</div>
+    <div style="font-size: 32px; font-weight: 900; color: #eab308; font-family: 'JetBrains Mono', monospace; line-height: 1;">{avg_ticks_str}</div>
+  </div>
+  <!-- METRIC 4 -->
+  <div style="flex: 1; min-width: 150px;">
+    <div style="font-size: 10px; color: #a855f7; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px;">🎯 AI PLAN EFFICIENCY</div>
+    <div style="font-size: 32px; font-weight: 900; color: #a855f7; font-family: 'JetBrains Mono', monospace; line-height: 1;">{efficiency}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 # ── Header ────────────────────────────────────────────────────────────────────
 tick_val = st.session_state.sim.tick if st.session_state.sim else 0
 st.markdown(f"""
@@ -410,7 +679,10 @@ st.markdown(f"""
     <div class="hdr-title">🔥 AI-Based Real-Time Crisis Orchestration System</div>
     <div class="hdr-sub">Multi-Occupancy Buildings · Detection → Decision → Assignment → Verification · Firefighter Integration</div>
   </div>
-  <div style="display:flex;gap:8px;align-items:center">
+  <div class="team-badge-header" style="position:absolute; right:150px; top:50%; transform:translateY(-50%); font-size:10px; color:#64748b;">
+    🎓 Built by Team CrisisAI • Pragati Engineering College
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;position:relative;z-index:2;">
     <span class="badge-tick">TICK {tick_val:03d}</span>
     <span class="badge-live">LIVE</span>
   </div>
@@ -462,6 +734,34 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 # ══ TAB 1 — LIVE MAP ══════════════════════════════════════════════════════════
 with tab1:
+    # ── AI DECISION ENGINE — LIVE REASONING PANEL ─────────────────────────────
+    live_bullets = build_live_reasoning(
+        decs, asns, sim, st.session_state.plan,
+        prev_decisions=st.session_state.get("prev_decisions", {})
+    ) if decs else [
+        "🤖 Initialize the system and run a tick to see live AI reasoning.",
+        "📊 Fire spread prediction, patient risk scoring, and staff routing will appear here.",
+    ]
+    bullets_html = "".join(
+        f'<div style="display:flex;gap:10px;margin-bottom:7px;align-items:flex-start">'
+        f'<span style="color:#22c55e;font-size:16px;line-height:1.3;flex-shrink:0">•</span>'
+        f'<span style="font-size:13px;color:#86efac;line-height:1.8;font-style:italic">{b}</span>'
+        f'</div>'
+        for b in live_bullets
+    )
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#0a1e0a,#051510);border:1px solid #22c55e40;
+                border-radius:12px;padding:16px 20px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;color:#22c55e;margin-bottom:12px;
+                  letter-spacing:.5px;display:flex;align-items:center;gap:10px">
+        🧠 AI DECISION ENGINE — LIVE REASONING
+        <span style="background:#22c55e;color:#000;font-size:9px;font-weight:800;
+                     padding:2px 9px;border-radius:20px;letter-spacing:1px;
+                     animation:pulse 1.6s infinite">TICK {tick_val:03d}</span>
+      </div>
+      {bullets_html}
+    </div>""", unsafe_allow_html=True)
+
     # Floor switcher
     if sim.building.floors > 1:
         floor_html = ""
@@ -485,8 +785,53 @@ with tab1:
         st.markdown(f'<div class="slabel">Building Map — Floor {vfloor}{badge}</div>', unsafe_allow_html=True)
         predicted = sim.predict_fire_spread(3) if sim.fire else []
         fire_new  = st.session_state.get("fire_new_cells", set())
-        st.markdown(render_grid(sim, floor=vfloor, predicted_fire=predicted, fire_new_cells=fire_new), unsafe_allow_html=True)
-        # Reset badge after render
+
+        # ── CHANGE 3a: Fire spread direction arrow ─────────────────────────────
+        ff_brief = st.session_state.get("ff_briefing")
+        if ff_brief and ff_brief.get("fire_spread_direction"):
+            raw_dir = ff_brief["fire_spread_direction"]
+        elif sim.fire and len(sim.fire) >= 4:
+            _fc = list(sim.fire)
+            _cx = sum(x for x,y,*_ in _fc)/len(_fc); _cy = sum(y for x,y,*_ in _fc)/len(_fc)
+            _rc = _fc[-max(4,len(_fc)//4):]
+            _rcx = sum(x for x,y,*_ in _rc)/len(_rc); _rcy = sum(y for x,y,*_ in _rc)/len(_rc)
+            _h = "East" if _rcx>_cx+0.3 else ("West" if _rcx<_cx-0.3 else "")
+            _v = "North" if _rcy<_cy-0.3 else ("South" if _rcy>_cy+0.3 else "")
+            raw_dir = (_v+_h).strip() or "Radial"
+        else:
+            raw_dir = "Radial"
+        _arrows = {"North":"↑","South":"↓","East":"→","West":"←",
+                   "Northeast":"↗","NorthEast":"↗","Southeast":"↘","SouthEast":"↘",
+                   "Southwest":"↙","SouthWest":"↙","Northwest":"↖","NorthWest":"↖",
+                   "Radial":"⭕","RADIAL":"⭕"}
+        _arrow = _arrows.get(raw_dir, "⭕")
+        if sim.fire:
+            st.markdown(
+                f'<div style="background:#1a0a0a;border:1px solid #ef444450;border-radius:8px;'
+                f'padding:8px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px">'
+                f'<span style="font-size:20px">{_arrow}</span>'
+                f'<span style="font-size:15px;font-weight:700;color:#ef4444">'
+                f'🔥 Fire spreading {_arrow} <b>{raw_dir.upper()}</b></span>'
+                f'</div>', unsafe_allow_html=True)
+
+        # ── CHANGE 1b: Predicted fire count banner ─────────────────────────────
+        if predicted:
+            st.markdown(
+                f'<div style="background:linear-gradient(90deg,#2d2000,#1a1400);'
+                f'border:1px solid #eab30870;border-radius:8px;padding:8px 14px;'
+                f'margin-bottom:8px;display:flex;align-items:center;gap:10px">'
+                f'<span style="font-size:16px">⚠️</span>'
+                f'<span style="font-size:13px;font-weight:700;color:#eab308">'
+                f'PREDICTED FIRE ZONES (NEXT 3 TICKS): '
+                f'<span style="font-size:18px;font-family:\'JetBrains Mono\'">{len(predicted)}</span> cells'
+                f'</span></div>', unsafe_allow_html=True)
+
+        # ── CHANGE 2b: Build priority_map for grid badges ──────────────────────
+        priority_map = {d["patient_id"]: d["explanation"]["priority_level"] for d in decs} if decs else {}
+
+        st.markdown(render_grid(sim, floor=vfloor, predicted_fire=predicted,
+                                fire_new_cells=fire_new, priority_map=priority_map),
+                    unsafe_allow_html=True)
         if updated:
             st.session_state.tick_updated = False
 
@@ -499,12 +844,36 @@ with tab1:
         st.markdown('<div class="slabel" style="margin-top:12px">Staff Assignments</div>', unsafe_allow_html=True)
         st.markdown(render_assignments(asns), unsafe_allow_html=True)
 
-    st.markdown('<div class="slabel" style="margin-top:10px">Event Log</div>', unsafe_allow_html=True)
-    log_html = "".join(
-        f'<div style="margin-bottom:2px;color:{"#ef4444" if "REASSIGN" in l or "failed" in l else "#22c55e" if "joined" in l or "AI chose" in l else "#475569"}">{l}</div>'
-        for l in reversed(st.session_state.log[-15:])
-    )
-    st.markdown(f'<div class="logbox">{log_html}</div>', unsafe_allow_html=True)
+    # ── CRISIS TIMELINE (STORY MODE) ──────────────────────────────────────────
+    st.markdown("""
+    <div style="background:#0a0f1e; border-radius:12px; padding:16px; margin-top:14px; border:1px solid #1e2a40; box-shadow:inset 0 4px 6px rgba(0,0,0,0.3);">
+      <div style="font-size:13px; font-weight:800; color:#e2e8f0; margin-bottom:14px; letter-spacing:0.5px;">
+        📜 CRISIS TIMELINE — LIVE UPDATES
+      </div>
+      <div style="max-height:200px; overflow-y:auto; padding-right:8px;">
+    """, unsafe_allow_html=True)
+
+    timeline_events = st.session_state.get("timeline", [])
+    if not timeline_events:
+        st.markdown('<div style="color:#475569;font-size:12px;font-style:italic;">Awaiting crisis events...</div>', unsafe_allow_html=True)
+    else:
+        # Show last 20 events, newest at bottom (or top)
+        # We'll display them newest at the bottom to simulate a terminal/log. 
+        # But overflow-y:auto usually starts at top. So let's reverse them so newest is at the top.
+        events_html = ""
+        for ev in reversed(timeline_events[-30:]):
+            events_html += f"""
+            <div class="story-row">
+              <div style="background:#1e2a40; color:#94a3b8; font-size:10px; font-family:'JetBrains Mono'; padding:3px 8px; border-radius:12px; font-weight:700; flex-shrink:0; margin-top:2px;">
+                T{ev['tick']:03d}
+              </div>
+              <div style="font-size:15px; flex-shrink:0;">{ev['icon']}</div>
+              <div style="font-size:13px; color:{ev['color']}; line-height:1.5;">{ev['msg']}</div>
+            </div>
+            """
+        st.markdown(events_html, unsafe_allow_html=True)
+    
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 # ══ TAB 2 — AI REASONING ══════════════════════════════════════════════════════
 with tab2:
