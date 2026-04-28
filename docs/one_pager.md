@@ -23,7 +23,7 @@ Most AI systems predict hazards. CrisisAI goes further — it simulates entire r
 **Technology:**
 - Backend: FastAPI, Google Gemini AI
 - Frontend: Real-time interactive dashboard
-- Deployment: Google Cloud Run (scales to 1000+ simultaneous users)
+- Deployment: Streamlit Community Cloud (scales to 1000+ simultaneous users)
 - Integration: IoT sensors, building APIs, fire department systems
 
 **Team:**

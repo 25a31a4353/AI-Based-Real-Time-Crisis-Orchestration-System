@@ -9,7 +9,7 @@ When judges ask these questions, say:
 **A:** "We simulate a no-AI baseline where staff are assigned randomly. Our system achieves 32 percentage points higher rescue rate and 50% faster response time. In practice, this means ~160 additional lives saved in a 500-person building."
 
 **Q: "Is this deployed in the real world?"**
-**A:** "Not yet — this is a working prototype. We're in conversations with [hospital/fire department] for a pilot. The system is designed for easy integration with existing building sensors and fire systems. Cloud deployment on Google Cloud Run scales to handle city-wide deployment if needed."
+**A:** "Not yet — this is a working prototype. We're in conversations with [hospital/fire department] for a pilot. The system is designed for easy integration with existing building sensors and fire systems. Cloud deployment on Streamlit Community Cloud scales to handle city-wide deployment if needed."
 
 **Q: "What's the ML component?"**
 **A:** "Current system is hybrid AI (rule + optimization). For Phase 2 (roadmap), we plan reinforcement learning trained on historical fire department response logs to learn optimal weight distributions from expert decision-makers."
@@ -23,7 +23,7 @@ When judges ask these questions, say:
 **Q: "How does this scale?"**
 **A:** "Current demo is single building. Architecture supports:
 - Multi-building campus: parallel instances per building
-- City-wide: microservices cluster on GCP
+- City-wide: microservices cluster on Streamlit Cloud
 - Interstate coordination: event streaming between regions
 - Tested on building sizes from 50 to 10,000+ occupants"
 

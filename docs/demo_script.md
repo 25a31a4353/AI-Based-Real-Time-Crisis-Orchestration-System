@@ -49,7 +49,7 @@
 
 *(Click Architecture tab: show IoT sensors, building integration, cloud deployment).*
 
-"Temperature sensors on every floor, CCTV smoke detection, staff location tracking, direct integration with door locks and fire systems. Deployed on Google Cloud — scales from single buildings to city-wide campus management."
+"Temperature sensors on every floor, CCTV smoke detection, staff location tracking, direct integration with door locks and fire systems. Deployed on Streamlit Community Cloud — scales from single buildings to city-wide campus management."
 
 ### [T=2:15 - 2:30] CLOSING
 "CrisisAI demonstrates that hybrid AI — combining rule-based logic with predictive simulation and LLM reasoning — can save lives in real-world emergencies. We're in discussions with [hospital/city] for pilot deployment. Questions?"

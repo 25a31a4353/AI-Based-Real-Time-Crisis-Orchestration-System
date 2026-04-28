@@ -2,9 +2,9 @@
 Vertex AI client for CrisisAI
 ==============================
 Calls Gemma 4 (gemma-3-27b-it) via google-genai SDK, authenticated with
-Application Default Credentials (ADC) on Cloud Run.
+Application Default Credentials (ADC) on Streamlit Community Cloud.
 
-On Cloud Run, no API key is needed — ADC uses the service account automatically.
+On Streamlit Community Cloud, no API key is needed — ADC uses the service account automatically.
 Locally, set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.
 """
 
@@ -34,7 +34,7 @@ def _get_client():
     api_key  = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
 
     if project:
-        # Cloud Run / ADC path — uses Vertex AI backend
+        # Streamlit Cloud / ADC path — uses Vertex AI backend
         _client = genai.Client(
             vertexai=True,
             project=project,

@@ -573,60 +573,34 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
 
-    with st.expander("☁️ CLOUD DEPLOYMENT TOPOLOGY", expanded=False):
-        st.markdown("""
-        <div style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#cbd5e1; background:#0a0f1e; padding:10px; border-radius:8px; border:1px solid #1e2a40; white-space:pre; overflow-x:auto;">
-┌─ Google Cloud Run (Container)
-│  ├─ FastAPI Backend (main.py)
-│  ├─ 6 AI Engine Modules
-│  ├─ Gemini AI Integration
-│  └─ REST API endpoints
-│
-├─ Streamlit Frontend (HTML/JS)
-│  ├─ Real-time grid vis.
-│  ├─ Live decision reasoning
-│  ├─ 3-plan comparison
-│  └─ Firefighter briefing
-│
-├─ External Integrations
-│  ├─ IoT Sensor Network (MQTT)
-│  ├─ Fire Dept API
-│  ├─ Building BMS
-│  └─ Hospital Comms System
-│
-└─ Data Layer
-   ├─ Real-time DB (Firestore)
-   ├─ Event log storage
-   └─ Historical analysis
-        </div>
-        """, unsafe_allow_html=True)
 
-    with st.expander("🏥 DEPLOYMENT CONTEXT", expanded=False):
+
+    with st.expander("🏥 FUTURE SCOPE", expanded=False):
         st.markdown("""
         <div style="font-size:11px;color:#cbd5e1;line-height:1.5;">
-            <b>CrisisAI integrates into a typical multi-occupancy building</b> (hospital, office, data center, school) with:<br><br>
-            <b style="color:#e2e8f0">SENSORS DEPLOYED:</b><br>
-            - Thermal: 50-200 sensors across building floors<br>
-            - Smoke detection: AI-powered CCTV system<br>
-            - Staff location: RFID badges<br>
-            - Patient tracking: Wearable proximity sensors<br><br>
-            <b style="color:#e2e8f0">SYSTEM ACTIVATION:</b><br>
-            - Thermal sensor detects temp > 55°C → alert sent to API<br>
-            - AI processes building state and available responders<br>
-            - AI decides: Which patients to evacuate, which staff to dispatch, which plan gives highest survival %<br>
-            - System sends commands: Unlock safe exits, alert staff, notify fire dept.<br><br>
-            <b style="color:#e2e8f0">SCALE:</b><br>
-            - Single building: Real-time for up to 500 occupants<br>
-            - Multi-building: Parallel instances per building<br>
-            - City-level: Microservices cluster<br><br>
-            <b style="color:#e2e8f0">TESTED ON:</b><br>
-            - Hospital ICU ward (250 patients, 100 staff)<br>
-            - Office complex (500 employees, 25 floors)<br>
-            - University campus (10,000+ daily occupants)
+            <b>CrisisAI will integrate into typical multi-occupancy buildings</b> (hospitals, offices, data centers, schools) with:<br><br>
+            <b style="color:#e2e8f0">SENSORS TO BE DEPLOYED:</b><br>
+            - Thermal: 50-200 sensors will monitor building floors<br>
+            - Smoke detection: AI-powered CCTV systems will be implemented<br>
+            - Staff location: RFID badges will track responder movement<br>
+            - Patient tracking: Wearable proximity sensors will be assigned<br><br>
+            <b style="color:#e2e8f0">FUTURE SYSTEM ACTIVATION:</b><br>
+            - Thermal sensors will detect temp > 55°C → alerts will be sent to the API<br>
+            - AI will process building states and identify available responders<br>
+            - AI will decide: Which patients to evacuate, which staff to dispatch, and which plan will give the highest survival %<br>
+            - System will send commands: Unlock safe exits, alert staff, and notify fire departments.<br><br>
+            <b style="color:#e2e8f0">SCALE GOALS:</b><br>
+            - Single building: Real-time management for up to 500 occupants<br>
+            - Multi-building: Parallel instances will run per building<br>
+            - City-level: A microservices cluster will coordinate city-wide responses<br><br>
+            <b style="color:#e2e8f0">TARGET DEPLOYMENTS:</b><br>
+            - Hospital ICU wards (250+ patients)<br>
+            - Office complexes (500+ employees)<br>
+            - University campuses (10,000+ daily occupants)
         </div>
         """, unsafe_allow_html=True)
         
-    @st.dialog("Deployment Guide")
+    @st.dialog("Future Deployment Guide")
     def show_deployment_guide():
         st.markdown("### CrisisAI Technical Architecture & Deployment Guide")
         st.markdown("This guide provides the complete technical specifications for deploying CrisisAI in a real-world multi-occupancy building environment.")
@@ -651,11 +625,11 @@ with st.sidebar:
         - **CCTV Integration:** RTSP streams ingested into a lightweight OpenCV/YOLOv8 pipeline for smoke pattern recognition.
         """)
 
-    if st.button("🔗 Deployment Guide", key="deploy_guide_btn", use_container_width=True):
+    if st.button("🔗 Future Deployment Guide", key="deploy_guide_btn", use_container_width=True):
         show_deployment_guide()
 
     st.markdown("---")
-    st.markdown('<div style="font-size:11px;color:#475569;margin-bottom:14px;margin-top:10px;">⚙️ CONTROL PANEL</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:11px;color:#22c55e;font-weight:800;letter-spacing:1px;margin-bottom:8px;margin-top:10px;">⚙️ CONTROL PANEL</div>', unsafe_allow_html=True)
 
     with st.expander("🏗️ Building Architecture", expanded=False):
         grid_w    = st.slider("Width (rooms)", 6, 15, 10)

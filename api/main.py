@@ -10,7 +10,7 @@ Endpoints:
   POST /api/ai/fire-direction    → Vertex AI Gemma 4 fire prediction
   GET  /api/dashboard            → combined control dashboard payload
 
-Cloud Run: listens on PORT env var (default 8080).
+Streamlit Community Cloud: listens on PORT env var (default 8080).
 """
 
 import os
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="CrisisAI Control API",
-    description="AI-Based Real-Time Crisis Orchestration System — Cloud Run Backend",
+    description="AI-Based Real-Time Crisis Orchestration System — Streamlit Community Cloud Backend",
     version="1.0.0",
     lifespan=lifespan,
 )
