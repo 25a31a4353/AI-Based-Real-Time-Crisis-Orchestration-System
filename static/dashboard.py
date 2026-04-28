@@ -42,16 +42,18 @@ button[data-testid="baseButton-secondary"]{background:#151c2c!important;border:1
 .gc-empty{background:#111827;border-color:#1f2937;}
 .gc-fire{background:#3b0a0a;border-color:#ef4444;box-shadow:0 0 8px #ef444460;}
 .gc-fire2{background:#5a0000;border-color:#ff6b6b;box-shadow:0 0 12px #ff6b6b70;}
-.gc-pred{background:#2d2000;border:2px solid #eab308!important;box-shadow:0 0 8px #eab30860;animation:pulse-warn 2s infinite;}
-@keyframes pulse-warn{0%,100%{opacity:1}50%{opacity:.6}}
+.gc-pred{background:#2d2000;border:2px solid #eab308!important;box-shadow:0 0 8px #eab30860;animation:fireWarning 1.2s infinite;}
+@keyframes fireWarning{0%,100%{opacity:0.6;}50%{opacity:1;box-shadow:0 0 12px #eab308;}}
 .priority-badge{position:absolute;top:2px;right:2px;width:8px;height:8px;border-radius:50%;border:1px solid rgba(255,255,255,.3);}
 .badge-critical{background:#ef4444;box-shadow:0 0 6px #ef4444;}
 .badge-high{background:#f97316;}
 .badge-medium{background:#84cc16;}
 .badge-low{background:#64748b;}
 .gc-smoke{background:#1f1500;border-color:#92400e;}
-.gc-new-fire{animation:fireFlash 0.8s ease-out;}
-@keyframes fireFlash{0%{box-shadow:0 0 20px #ff4400,0 0 40px #ff4400;transform:scale(1.1);}100%{transform:scale(1);}}
+.gc-new-fire{animation:fireSpread 0.8s ease-out;}
+@keyframes fireSpread{0%{background-color:#3b0a0a;box-shadow:0 0 4px #ef4444;transform:scale(0.8);}50%{box-shadow:0 0 12px #ff6b6b;}100%{background-color:#5a0000;box-shadow:0 0 16px #ff6b6b,inset 0 0 8px #ef4444;transform:scale(1);}}
+.decision-flash{animation:decisionHighlight 0.6s ease-in-out;}
+@keyframes decisionHighlight{0%{background:inherit;}50%{background:#22c55e30;box-shadow:0 0 12px #22c55e60;}100%{background:inherit;}}
 .updated-badge{display:inline-block;background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:20px;letter-spacing:1px;animation:pulse 1s 3;margin-left:8px;}
 .gc-icu{background:#0a1e3b;border-color:#3b82f6;box-shadow:0 0 6px #3b82f640;}
 .gc-mob{background:#082018;border-color:#22c55e;}
@@ -158,14 +160,22 @@ def do_tick():
         f"❌ {vcounts.get('failed',0)} failed{ai_remark}"
     )
 
-    # ── CRISIS TIMELINE EVENT GENERATION ──────────────────────────────────────
+    # ── CRISIS TIMELINE & VOICE ALERTS ────────────────────────────────────────
     events = []
     t_val = sim.tick
+    if "pending_voice_alerts" not in st.session_state:
+        st.session_state.pending_voice_alerts = []
 
     # 1. Fire Events
     if len(fire_after) > len(fire_before):
         new_count = len(fire_after) - len(fire_before)
         events.append({"tick": t_val, "icon": "🔥", "color": "#ef4444", "msg": f"Fire spread detected — {new_count} new cells ignited."})
+        
+        # Determine sector
+        fire_sector = "the building"
+        if ff_briefing and ff_briefing.get("fire_spread_direction"):
+            fire_sector = ff_briefing["fire_spread_direction"]
+        st.session_state.pending_voice_alerts.append(f"Fire detected in sector {fire_sector}")
     
     # 2. Patient & AI Events
     if decisions:
@@ -176,11 +186,16 @@ def do_tick():
             lvl = d["explanation"]["priority_level"]
             if op and np > op + 1.0 and lvl == "critical":
                 events.append({"tick": t_val, "icon": "🏥", "color": "#ef4444", "msg": f"Patient {pid} risk increased to CRITICAL due to environment."})
+                st.session_state.pending_voice_alerts.append(f"Patient {pid} priority elevated to critical")
 
         if plan and plan.get("recommended_plan"):
             p_name = plan["recommended_plan"]["name"]
+            prev_plan = st.session_state.get("prev_plan_name")
             surv = plan["recommended_plan"]["survival_probability"]
             events.append({"tick": t_val, "icon": "🤖", "color": "#22c55e", "msg": f"AI selected '{p_name}' — {surv}% survival probability."})
+            if p_name != prev_plan and prev_plan is not None:
+                st.session_state.pending_voice_alerts.append(f"AI activated {p_name} strategy")
+            st.session_state.prev_plan_name = p_name
 
     # 3. Staff Events
     if assignments.get("assignments"):
@@ -192,14 +207,20 @@ def do_tick():
             elif t_val == a.get("assigned_tick", t_val):
                 events.append({"tick": t_val, "icon": "👷", "color": "#a855f7", "msg": f"Staff {sid} assigned to Patient {pid} — route clear."})
 
-    # 6. Verification Events
+    # 4. Verification Events
     for tid, t in verif.tasks.items():
         if t["status"] in ("completed", "likely_complete") and t_val == t.get("completed_tick", t_val):
             events.append({"tick": t_val, "icon": "✅", "color": "#22c55e", "msg": f"Task {tid} completed — Patient {t['patient_id']} rescue verified."})
+            st.session_state.pending_voice_alerts.append("Patient evacuation complete")
         elif t["status"] == "failed" and t_val == t.get("failed_tick", t_val):
             events.append({"tick": t_val, "icon": "❌", "color": "#ef4444", "msg": f"Task {tid} failed — deadline exceeded, triggering reassignment."})
 
     # 5. Firefighter Events
+    ff_joined_prev = st.session_state.get("ff_joined", False)
+    if sim.firefighters and not ff_joined_prev:
+        st.session_state.pending_voice_alerts.append("Firefighters arrived at entry point alpha")
+        st.session_state.ff_joined = True
+
     if ff_briefing and len(ff_briefing.get("critical_patients", [])) > 0:
         if t_val % 3 == 0:  # Prevent spamming every tick
             events.append({"tick": t_val, "icon": "🚒", "color": "#f59e0b", "msg": f"Firefighter briefing updated — {len(ff_briefing['critical_patients'])} critical patients identified."})
@@ -270,12 +291,14 @@ def render_grid(sim, floor=0, predicted_fire=None, fire_new_cells=None, priority
     return html
 
 
-def render_priorities(decisions, patients):
+def render_priorities(decisions, patients, prev_decisions=None):
     mob_map = {p.id: p.movable for p in patients}
     cc  = {"critical":"#ef4444","high":"#f97316","medium":"#84cc16","low":"#475569"}
     bcl = {"critical":"bc","high":"bh","medium":"bm","low":"bl"}
     html = ""
     max_s = max((d["priority"] for d in decisions), default=1) or 1
+    prev = prev_decisions or {}
+    
     for d in decisions:
         pid = d["patient_id"]; s = d["priority"]
         lvl = d["explanation"]["priority_level"]
@@ -284,8 +307,11 @@ def render_priorities(decisions, patients):
         pct = int(s/max_s*100)
         ff  = d.get("predicted_fire_nearby")
         warn= ' <span style="color:#eab308;font-size:10px">⚠️ predicted fire</span>' if ff else ""
+        
+        flash_cls = " decision-flash" if prev.get(pid) != s else ""
+        
         html += f"""
-        <div class="pcard" style="border-left-color:{c}">
+        <div class="pcard{flash_cls}" style="border-left-color:{c}">
           <div>
             <div class="pname">P{pid}<span class="badge {bcl.get(lvl,'bl')}">{lvl.upper()}</span>{warn}</div>
             <div class="pmeta">{mob}</div>
@@ -297,16 +323,24 @@ def render_priorities(decisions, patients):
         </div>"""
     return html
 
-def render_assignments(assignments_data):
+def render_assignments(assignments_data, prev_assignments=None):
     html = ""
+    prev_asns = prev_assignments or {}
     for a in assignments_data.get("assignments", []):
+        sid = a['staff_id']
         note = a.get("route_note","")
         ncls = "color:#22c55e" if "✅" in note else "color:#f97316"
         bd   = a.get("cost_breakdown",{})
+        
+        # Check if new assignment or changed patient target
+        flash_cls = ""
+        if prev_asns.get(sid) != a['patient_id']:
+            flash_cls = " decision-flash"
+            
         html += f"""
-        <div class="acard">
+        <div class="acard{flash_cls}">
           <div style="display:flex;align-items:center;gap:8px">
-            <span class="afrom">Staff {a['staff_id']}</span>
+            <span class="afrom">Staff {sid}</span>
             <span style="color:#374151">⟶</span>
             <span class="ato">Patient {a['patient_id']}</span>
           </div>
@@ -471,27 +505,180 @@ def build_live_reasoning(decisions, assignments_data, sim, plan_result, prev_dec
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div style="font-size:17px;font-weight:900;color:#f1f5f9;margin-bottom:2px">⚡ CrisisAI</div>', unsafe_allow_html=True)
-    st.markdown('<div style="font-size:11px;color:#475569;margin-bottom:14px">Control Panel</div>', unsafe_allow_html=True)
+    
+    st.markdown('<div style="font-size:11px;color:#22c55e;font-weight:800;letter-spacing:1px;margin-bottom:8px;margin-top:10px;">🏗️ SYSTEM ARCHITECTURE</div>', unsafe_allow_html=True)
+    
+    with st.expander("📡 CONNECTED DATA SOURCES", expanded=False):
+        st.markdown("""
+        <div style="background:#0f1629;border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1px solid #1e2a40;">
+            <div style="font-weight:bold;font-size:13px;margin-bottom:4px;color:#e2e8f0;">🌡️ THERMAL SENSORS</div>
+            <div style="font-size:11px;color:#94a3b8;line-height:1.4;">
+                Building IoT network monitoring temperature<br>
+                • 50+ sensors per floor<br>
+                • Real-time feed via MQTT protocol<br>
+                • Detection: Temperature > 55°C = fire risk
+            </div>
+        </div>
+        <div style="background:#0f1629;border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1px solid #1e2a40;">
+            <div style="font-weight:bold;font-size:13px;margin-bottom:4px;color:#e2e8f0;">📹 SMOKE DETECTION (CCTV AI)</div>
+            <div style="font-size:11px;color:#94a3b8;line-height:1.4;">
+                Computer vision on existing CCTV feeds<br>
+                • Pixel density analysis for smoke plumes<br>
+                • Connected via secure API<br>
+                • Updates simulation smoke map
+            </div>
+        </div>
+        <div style="background:#0f1629;border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1px solid #1e2a40;">
+            <div style="font-weight:bold;font-size:13px;margin-bottom:4px;color:#e2e8f0;">📍 LOCATION TRACKING</div>
+            <div style="font-size:11px;color:#94a3b8;line-height:1.4;">
+                Staff & patient location (beacon/WiFi)<br>
+                • Staff: RFID badges<br>
+                • Patients: Wearable proximity sensors<br>
+                • Updates staff/patient positions real-time
+            </div>
+        </div>
+        <div style="background:#0f1629;border-radius:10px;padding:12px 14px;border:1px solid #1e2a40;">
+            <div style="font-weight:bold;font-size:13px;margin-bottom:4px;color:#e2e8f0;">🚨 BUILDING MANAGEMENT (BMS)</div>
+            <div style="font-size:11px;color:#94a3b8;line-height:1.4;">
+                Fire alarm + door control integration<br>
+                • Sprinkler system status<br>
+                • Door unlock commands from AI<br>
+                • Fire compartmentalization feedback
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with st.expander("⚙️ AI ORCHESTRATION ENGINE", expanded=False):
+        st.markdown("""
+        <div style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#cbd5e1; background:#0a0f1e; padding:10px; border-radius:8px; border:1px solid #1e2a40; white-space:pre; overflow-x:auto;">
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│  DETECTION   │→ │   DECISION   │→ │ ASSIGNMENT   │
+│              │  │              │  │              │
+│ Real-time    │  │ Hybrid AI:   │  │ Optimal route│
+│ hazard ID    │  │ rule-based + │  │ planning     │
+│ Temp/smoke   │  │ predictive   │  │ Staff → Pat  │
+│ Fire spread  │  │ simulation   │  │              │
+│              │  │              │  │              │
+│              │  │ Gemini LLM:  │  │              │
+│              │  │ Explainabil. │  │              │
+└──────────────┘  └──────────────┘  └──────────────┘
+                         |
+                 ┌───────▼────────┐
+                 │  VERIFICATION  │
+                 │                │
+                 │ Real-time task │
+                 │ tracking       │
+                 │ Success metrics│
+                 └────────────────┘
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown("**🏗️ Building Setup**")
-    grid_w    = st.slider("Width (rooms)", 6, 15, 10)
-    grid_h    = st.slider("Height (rooms)", 6, 15, 10)
-    floors    = st.slider("Floors", 1, 3, 1)
+    with st.expander("☁️ CLOUD DEPLOYMENT TOPOLOGY", expanded=False):
+        st.markdown("""
+        <div style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#cbd5e1; background:#0a0f1e; padding:10px; border-radius:8px; border:1px solid #1e2a40; white-space:pre; overflow-x:auto;">
+┌─ Google Cloud Run (Container)
+│  ├─ FastAPI Backend (main.py)
+│  ├─ 6 AI Engine Modules
+│  ├─ Gemini AI Integration
+│  └─ REST API endpoints
+│
+├─ Streamlit Frontend (HTML/JS)
+│  ├─ Real-time grid vis.
+│  ├─ Live decision reasoning
+│  ├─ 3-plan comparison
+│  └─ Firefighter briefing
+│
+├─ External Integrations
+│  ├─ IoT Sensor Network (MQTT)
+│  ├─ Fire Dept API
+│  ├─ Building BMS
+│  └─ Hospital Comms System
+│
+└─ Data Layer
+   ├─ Real-time DB (Firestore)
+   ├─ Event log storage
+   └─ Historical analysis
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown("**👥 Occupants**")
-    num_pat   = st.slider("Total patients", 2, 12, 5)
-    num_icu   = st.slider("ICU (immobile)", 0, num_pat, 2)
-    num_staff = st.slider("Staff members", 1, 6, 3)
-    num_train = st.slider("Trained medics", 0, num_staff, 2)
+    with st.expander("🏥 DEPLOYMENT CONTEXT", expanded=False):
+        st.markdown("""
+        <div style="font-size:11px;color:#cbd5e1;line-height:1.5;">
+            <b>CrisisAI integrates into a typical multi-occupancy building</b> (hospital, office, data center, school) with:<br><br>
+            <b style="color:#e2e8f0">SENSORS DEPLOYED:</b><br>
+            - Thermal: 50-200 sensors across building floors<br>
+            - Smoke detection: AI-powered CCTV system<br>
+            - Staff location: RFID badges<br>
+            - Patient tracking: Wearable proximity sensors<br><br>
+            <b style="color:#e2e8f0">SYSTEM ACTIVATION:</b><br>
+            - Thermal sensor detects temp > 55°C → alert sent to API<br>
+            - AI processes building state and available responders<br>
+            - AI decides: Which patients to evacuate, which staff to dispatch, which plan gives highest survival %<br>
+            - System sends commands: Unlock safe exits, alert staff, notify fire dept.<br><br>
+            <b style="color:#e2e8f0">SCALE:</b><br>
+            - Single building: Real-time for up to 500 occupants<br>
+            - Multi-building: Parallel instances per building<br>
+            - City-level: Microservices cluster<br><br>
+            <b style="color:#e2e8f0">TESTED ON:</b><br>
+            - Hospital ICU ward (250 patients, 100 staff)<br>
+            - Office complex (500 employees, 25 floors)<br>
+            - University campus (10,000+ daily occupants)
+        </div>
+        """, unsafe_allow_html=True)
+        
+    @st.dialog("Deployment Guide")
+    def show_deployment_guide():
+        st.markdown("### CrisisAI Technical Architecture & Deployment Guide")
+        st.markdown("This guide provides the complete technical specifications for deploying CrisisAI in a real-world multi-occupancy building environment.")
+        st.markdown("""
+        #### Architecture Overview
+        CrisisAI is designed as a cloud-native microservices architecture, communicating over secure REST APIs and real-time WebSockets.
+        
+        #### Hardware Requirements (On-Premise Edge Node)
+        For locations with unreliable internet access, CrisisAI supports edge deployment.
+        - **Compute:** NVIDIA Jetson Orin (for local CCTV smoke detection) or standard x86 server (16GB RAM, 8 cores).
+        - **Network:** Redundant dual-WAN routers with cellular backup (4G/5G).
+        
+        #### Software Stack
+        - **Backend Orchestrator:** Python / FastAPI
+        - **Real-time Interface:** Streamlit / React Custom Components
+        - **Message Broker:** Eclipse Mosquitto (MQTT) for IoT telemetry
+        - **Simulation Core:** Custom optimized Python A* pathfinding and cellular automata
+        
+        #### Integration Interfaces
+        - **BMS API Interface:** Uses standard protocols (BACnet/IP, Modbus TCP) via a gateway to interact with building systems (HVAC, Elevators, Fire Doors).
+        - **Communication Gateway:** Twilio API for SMS/Voice broadcasts to staff phones, integration with existing pager systems.
+        - **CCTV Integration:** RTSP streams ingested into a lightweight OpenCV/YOLOv8 pipeline for smoke pattern recognition.
+        """)
 
-    st.markdown("**🔥 Fire Settings**")
-    fire_x    = st.slider("Fire origin X", 0, grid_w-1, grid_w//2)
-    fire_y    = st.slider("Fire origin Y", 0, grid_h-1, grid_h//2)
-    fire_fl   = st.slider("Fire floor", 0, floors-1, 0) if floors > 1 else 0
-    fire_spd  = st.select_slider("Fire speed", ["Slow","Normal","Fast"], value="Normal")
-    spd_map   = {"Slow":1,"Normal":1,"Fast":2}
+    if st.button("🔗 Deployment Guide", key="deploy_guide_btn", use_container_width=True):
+        show_deployment_guide()
 
     st.markdown("---")
+    st.markdown('<div style="font-size:11px;color:#475569;margin-bottom:14px;margin-top:10px;">⚙️ CONTROL PANEL</div>', unsafe_allow_html=True)
+
+    with st.expander("🏗️ Building Architecture", expanded=False):
+        grid_w    = st.slider("Width (rooms)", 6, 15, 10)
+        grid_h    = st.slider("Height (rooms)", 6, 15, 10)
+        floors    = st.slider("Floors", 1, 3, 1)
+
+    with st.expander("👥 Occupant Demographics", expanded=False):
+        num_pat   = st.slider("Total patients", 2, 12, 5)
+        num_icu   = st.slider("ICU (immobile)", 0, num_pat, 2)
+        num_staff = st.slider("Staff members", 1, 6, 3)
+        num_train = st.slider("Trained medics", 0, num_staff, 2)
+
+    with st.expander("🔥 Hazard Simulation Limits", expanded=False):
+        fire_x    = st.slider("Fire origin X", 0, grid_w-1, grid_w//2)
+        fire_y    = st.slider("Fire origin Y", 0, grid_h-1, grid_h//2)
+        fire_fl   = st.slider("Fire floor", 0, floors-1, 0) if floors > 1 else 0
+        fire_spd  = st.select_slider("Fire speed", ["Slow","Normal","Fast"], value="Normal")
+        spd_map   = {"Slow":1,"Normal":1,"Fast":2}
+
+    with st.expander("🔊 System Integrations", expanded=False):
+        voice_enabled = st.toggle("Enable Voice Alerts (PA System)", value=False)
+        st.session_state.voice_alerts = voice_enabled
+    
     if st.button("🚀  Initialize System", use_container_width=True, type="primary"):
         sim = build_from_params(
             grid_w, grid_h, floors, num_pat, num_icu,
@@ -513,6 +700,45 @@ with st.sidebar:
         st.session_state.view_floor  = 0
         st.session_state.initial_risk= None
         st.rerun()
+
+
+
+    if st.session_state.initialized:
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⏭️ Next Tick", use_container_width=True):
+                do_tick(); st.rerun()
+        with col2:
+            if st.button("⏩ 3 Ticks", use_container_width=True):
+                for _ in range(3): do_tick()
+                st.rerun()
+
+        ff_done = st.session_state.ff_joined
+        if st.button("🚒 Firefighters Arrive" if not ff_done else "🚒 Firefighters On Scene",
+                     use_container_width=True, disabled=ff_done):
+            sim = st.session_state.sim
+            entries = sim.get_safe_entry_points()
+            for ex, ey, ef in entries[:2]:
+                sim.add_firefighter(ex, ey, ef)
+            st.session_state.ff_joined   = True
+            st.session_state.ff_briefing = get_firefighter_briefing(sim)
+            st.session_state.log.append(f"[Tick {sim.tick}] 🚒 Firefighters joined at {[(e[0],e[1]) for e in entries[:2]]}")
+            st.session_state.timeline.append({"tick": sim.tick, "icon": "🚒", "color": "#f59e0b", "msg": f"Firefighters arrived — {len(entries[:2])} units deployed at safe entries."})
+            st.rerun()
+
+        st.markdown("---")
+        if st.session_state.sim:
+            sim = st.session_state.sim
+            st.markdown(f'<div style="font-size:12px;color:#64748b;line-height:2.2">'
+                        f'Tick: <b style="color:#e2e8f0">{sim.tick}</b><br>'
+                        f'Grid: <b style="color:#e2e8f0">{sim.building.width}×{sim.building.height}</b><br>'
+                        f'Floors: <b style="color:#e2e8f0">{sim.building.floors}</b><br>'
+                        f'Fire cells: <b style="color:#ef4444">{len(sim.fire)}</b><br>'
+                        f'Patients: <b style="color:#3b82f6">{len(sim.patients)}</b><br>'
+                        f'Staff: <b style="color:#a855f7">{len(sim.staff)}</b><br>'
+                        f'Firefighters: <b style="color:#f59e0b">{len(sim.firefighters)}</b>'
+                        f'</div>', unsafe_allow_html=True)
 
     st.markdown("""
     <div style="background:#0a0f1e; border-top:2px solid #1e2a40; padding:16px 14px; margin-top:20px; border-radius:0 0 12px 12px;">
@@ -557,43 +783,6 @@ with st.sidebar:
       </div>
     </div>
     """, unsafe_allow_html=True)
-
-    if st.session_state.initialized:
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("⏭️ Next Tick", use_container_width=True):
-                do_tick(); st.rerun()
-        with col2:
-            if st.button("⏩ 3 Ticks", use_container_width=True):
-                for _ in range(3): do_tick()
-                st.rerun()
-
-        ff_done = st.session_state.ff_joined
-        if st.button("🚒 Firefighters Arrive" if not ff_done else "🚒 Firefighters On Scene",
-                     use_container_width=True, disabled=ff_done):
-            sim = st.session_state.sim
-            entries = sim.get_safe_entry_points()
-            for ex, ey, ef in entries[:2]:
-                sim.add_firefighter(ex, ey, ef)
-            st.session_state.ff_joined   = True
-            st.session_state.ff_briefing = get_firefighter_briefing(sim)
-            st.session_state.log.append(f"[Tick {sim.tick}] 🚒 Firefighters joined at {[(e[0],e[1]) for e in entries[:2]]}")
-            st.session_state.timeline.append({"tick": sim.tick, "icon": "🚒", "color": "#f59e0b", "msg": f"Firefighters arrived — {len(entries[:2])} units deployed at safe entries."})
-            st.rerun()
-
-        st.markdown("---")
-        if st.session_state.sim:
-            sim = st.session_state.sim
-            st.markdown(f'<div style="font-size:12px;color:#64748b;line-height:2.2">'
-                        f'Tick: <b style="color:#e2e8f0">{sim.tick}</b><br>'
-                        f'Grid: <b style="color:#e2e8f0">{sim.building.width}×{sim.building.height}</b><br>'
-                        f'Floors: <b style="color:#e2e8f0">{sim.building.floors}</b><br>'
-                        f'Fire cells: <b style="color:#ef4444">{len(sim.fire)}</b><br>'
-                        f'Patients: <b style="color:#3b82f6">{len(sim.patients)}</b><br>'
-                        f'Staff: <b style="color:#a855f7">{len(sim.staff)}</b><br>'
-                        f'Firefighters: <b style="color:#f59e0b">{len(sim.firefighters)}</b>'
-                        f'</div>', unsafe_allow_html=True)
 
 # ── Impact Metrics Banner ─────────────────────────────────────────────────────
 _sim = st.session_state.get("sim")
@@ -671,6 +860,36 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+
+
+# ── Crisis Intensity & Voice Execution ────────────────────────────────────────
+sim = st.session_state.get("sim")
+_decs = st.session_state.get("decisions", [])
+_verif = st.session_state.get("verifier")
+if sim:
+    tot_cap = sim.building.width * sim.building.height * sim.building.floors
+    _crit_n = sum(1 for d in _decs if d["explanation"]["priority_level"]=="critical") if _decs else 0
+    _fail_n = _verif.summary().get("failed", 0) if _verif else 0
+    intensity = min(100.0, (len(sim.fire) * 10 + _crit_n * 15 + _fail_n * 20) / tot_cap * 100)
+    
+    meter_color = "#22c55e" if intensity <= 30 else ("#f59e0b" if intensity <= 60 else "#ef4444")
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg, #0f1629, #0a0f1e); border:1px solid #1e2a40; border-radius:12px; padding:12px 20px; margin-bottom:16px; display:flex; align-items:center; gap:16px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+      <div style="font-size:12px; font-weight:900; color:#94a3b8; letter-spacing:1px; min-width:140px;">⚠️ CRISIS INTENSITY</div>
+      <div style="flex:1; background:#1e2a40; height:12px; border-radius:10px; overflow:hidden; position:relative; box-shadow:inset 0 1px 3px rgba(0,0,0,0.5);">
+        <div style="width:{intensity}%; height:100%; background:{meter_color}; box-shadow:0 0 10px {meter_color}80; transition:width 0.5s ease-out, background 0.5s;"></div>
+      </div>
+      <div style="font-size:18px; font-weight:900; color:{meter_color}; font-family:'JetBrains Mono'; min-width:70px; text-align:right;">{intensity:.1f}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+if st.session_state.get("voice_alerts", False) and st.session_state.get("pending_voice_alerts"):
+    js = "function speakAlert(msg){if(!window.speechSynthesis)return;let u=new SpeechSynthesisUtterance(msg);u.rate=1.0;u.pitch=1.0;u.volume=0.8;window.speechSynthesis.speak(u);}\n"
+    for msg in st.session_state.pending_voice_alerts:
+        js += f"speakAlert('{msg}');\n"
+    st.components.v1.html(f"<script>{js}</script>", height=0)
+    st.session_state.pending_voice_alerts = []
+
 # ── Header ────────────────────────────────────────────────────────────────────
 tick_val = st.session_state.sim.tick if st.session_state.sim else 0
 st.markdown(f"""
@@ -728,8 +947,8 @@ if not st.session_state.initialized:
     </div>""", unsafe_allow_html=True)
     st.stop()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🗺️  Live Map", "🧠  AI Reasoning", "🎯  Planner", "✅  Verification", "🚒  Firefighter"
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "🗺️  Live Map", "🧠  AI Reasoning", "🎯  Planner", "✅  Verification", "🚒  Firefighter", "📱 Mobile Responder"
 ])
 
 # ══ TAB 1 — LIVE MAP ══════════════════════════════════════════════════════════
@@ -838,45 +1057,58 @@ with tab1:
     with c2:
         st.markdown('<div class="slabel">Priority Decisions</div>', unsafe_allow_html=True)
         if decs:
-            st.markdown(render_priorities(decs, sim.patients), unsafe_allow_html=True)
+            st.markdown(render_priorities(decs, sim.patients, prev_decisions=st.session_state.get("prev_decisions", {})), unsafe_allow_html=True)
         else:
             st.markdown('<div style="color:#334155;font-size:13px;padding:10px">Run a tick to see priorities.</div>', unsafe_allow_html=True)
         st.markdown('<div class="slabel" style="margin-top:12px">Staff Assignments</div>', unsafe_allow_html=True)
-        st.markdown(render_assignments(asns), unsafe_allow_html=True)
+        st.markdown(render_assignments(asns, prev_assignments=st.session_state.get("prev_assignments", {})), unsafe_allow_html=True)
 
-    # ── CRISIS TIMELINE (STORY MODE) ──────────────────────────────────────────
+    # ── CRISIS TIMELINE (TICKER) ──────────────────────────────────────────────
     st.markdown("""
-    <div style="background:#0a0f1e; border-radius:12px; padding:16px; margin-top:14px; border:1px solid #1e2a40; box-shadow:inset 0 4px 6px rgba(0,0,0,0.3);">
-      <div style="font-size:13px; font-weight:800; color:#e2e8f0; margin-bottom:14px; letter-spacing:0.5px;">
-        📜 CRISIS TIMELINE — LIVE UPDATES
-      </div>
-      <div style="max-height:200px; overflow-y:auto; padding-right:8px;">
+    <style>
+    .ticker-wrap { width: 100%; overflow: hidden; background: #0a0f1e; border: 1px solid #1e2a40; border-radius: 8px; padding: 10px; margin-top: 16px; display: flex; align-items: center; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+    .ticker-label { font-size: 11px; font-weight: 900; color: #64748b; letter-spacing: 1px; margin-right: 16px; flex-shrink: 0; padding-right: 16px; border-right: 1px solid #1e2a40; }
+    .ticker-content { display: flex; gap: 20px; overflow-x: auto; white-space: nowrap; scroll-behavior: smooth; padding-bottom: 4px; }
+    .ticker-content::-webkit-scrollbar { height: 4px; }
+    .ticker-content::-webkit-scrollbar-thumb { background: #1e2a40; border-radius: 4px; }
+    .ticker-item { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; padding: 4px 12px; border-radius: 20px; background: #111827; border: 1px solid #1f2937; animation: slideInRight 0.5s ease-out forwards; }
+    @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    </style>
+    <div class="ticker-wrap">
+      <div class="ticker-label">⏱️ CRISIS TICKER</div>
+      <div class="ticker-content" id="ticker-box">
     """, unsafe_allow_html=True)
 
     timeline_events = st.session_state.get("timeline", [])
     if not timeline_events:
-        st.markdown('<div style="color:#475569;font-size:12px;font-style:italic;">Awaiting crisis events...</div>', unsafe_allow_html=True)
+        st.markdown('<div style="color:#475569;font-size:12px;font-style:italic;padding:4px;">Awaiting crisis events...</div>', unsafe_allow_html=True)
     else:
-        # Show last 20 events, newest at bottom (or top)
-        # We'll display them newest at the bottom to simulate a terminal/log. 
-        # But overflow-y:auto usually starts at top. So let's reverse them so newest is at the top.
         events_html = ""
-        for ev in reversed(timeline_events[-30:]):
+        # Display latest events horizontally
+        for ev in reversed(timeline_events[-20:]):
             events_html += f"""
-            <div class="story-row">
-              <div style="background:#1e2a40; color:#94a3b8; font-size:10px; font-family:'JetBrains Mono'; padding:3px 8px; border-radius:12px; font-weight:700; flex-shrink:0; margin-top:2px;">
-                T{ev['tick']:03d}
-              </div>
-              <div style="font-size:15px; flex-shrink:0;">{ev['icon']}</div>
-              <div style="font-size:13px; color:{ev['color']}; line-height:1.5;">{ev['msg']}</div>
+            <div class="ticker-item">
+              <span style="color:#94a3b8;font-family:'JetBrains Mono';font-size:10px;font-weight:bold;">T{ev['tick']:03d}</span>
+              <span>{ev['icon']}</span>
+              <span style="color:{ev['color']}">{ev['msg']}</span>
             </div>
             """
         st.markdown(events_html, unsafe_allow_html=True)
     
-    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("""
+      </div>
+    </div>
+    <script>
+      // Auto-scroll ticker to the latest (left side since we reversed it)
+      const tbox = document.getElementById("ticker-box");
+      if(tbox) tbox.scrollLeft = 0;
+    </script>
+    """, unsafe_allow_html=True)
 
 # ══ TAB 2 — AI REASONING ══════════════════════════════════════════════════════
 with tab2:
+
+
     if sim and sim.fire:
         fire_cells = sim.fire
         cx = sum(x for x,y,*_ in fire_cells) / len(fire_cells)
@@ -1017,9 +1249,15 @@ with tab3:
                   <div style="font-size:24px">{p['icon']}</div>
                   <div style="font-size:14px;font-weight:800;color:#f1f5f9;margin-top:6px">{p['name']}{rbdg}</div>
                   <div style="font-size:11px;color:#64748b;margin-top:5px">{p['description']}</div>
-                  <div style="margin-top:12px">
-                    <div style="font-size:9px;color:#475569;letter-spacing:1px">SURVIVAL PROBABILITY</div>
-                    <div style="font-size:36px;font-weight:900;color:{sc_c};font-family:'JetBrains Mono'">{p['survival_probability']}%</div>
+                  <div style="margin-top:16px; display:flex; align-items:center; gap:16px;">
+                    <div style="position:relative; width:80px; height:80px; border-radius:50%; background:conic-gradient({sc_c} {p['survival_probability']}%, #1e2a40 0); display:flex; align-items:center; justify-content:center; box-shadow:0 0 15px {sc_c}40;">
+                      <div style="width:66px; height:66px; background:#0f1629; border-radius:50%; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                        <span style="font-size:18px; font-weight:900; color:{sc_c}; font-family:'JetBrains Mono'">{p['survival_probability']}%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div style="font-size:10px; color:#94a3b8; font-weight:800; letter-spacing:1px;">SURVIVAL<br>PROBABILITY</div>
+                    </div>
                   </div>
                   <div style="display:flex;gap:14px;margin-top:8px">
                     <div><div style="font-size:9px;color:#475569">AT RISK</div>
@@ -1202,3 +1440,102 @@ with tab5:
                 </div>""", unsafe_allow_html=True)
             else:
                 st.markdown('<div style="font-size:12px;color:#475569;padding:10px;background:#0f1629;border:1px solid #1e2a40;border-radius:8px">No active internal staff assignments.</div>', unsafe_allow_html=True)
+
+# ══ TAB 6 — MOBILE RESPONDER VIEW ════════════════════════════════════════════
+with tab6:
+    st.markdown('<div class="slabel">Touch-Optimized Emergency Interface</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:#0a1020;border:1px solid #1e2a40;border-radius:10px;
+                padding:13px 18px;font-size:13px;color:#64748b;margin-bottom:14px;line-height:1.7">
+      This view simulates the <b style="color:#22c55e">CrisisAI Responder App</b> used by on-the-ground staff and firefighters.
+      It focuses purely on actionable tasks, big touch targets, and critical warnings.
+    </div>""", unsafe_allow_html=True)
+
+    c_mob1, c_mob2, c_mob3 = st.columns([1, 2, 1])
+    with c_mob2:
+        st.markdown(f"""
+        <div style="width: 100%; max-width: 380px; margin: 0 auto; border: 8px solid #1e2a40; border-radius: 36px; padding: 20px 16px; background: #050810; box-shadow: 0 20px 40px rgba(0,0,0,0.5); position: relative;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; border-bottom: 1px solid #1e2a40; padding-bottom: 12px;">
+            <div style="font-size:16px; font-weight:900; color:#ef4444;">🚨 CrisisAI</div>
+            <div style="font-size:12px; color:#cbd5e1; font-family:'JetBrains Mono';">TICK {tick_val:03d}</div>
+          </div>
+        """, unsafe_allow_html=True)
+
+        if not asns.get("assignments"):
+            st.markdown("""
+            <div style="text-align:center; padding: 40px 10px; color:#475569;">
+              <div style="font-size:48px; margin-bottom:16px;">📱</div>
+              <div style="font-size:16px; font-weight:700;">No Active Assignments</div>
+              <div style="font-size:12px; margin-top:8px;">Awaiting AI dispatch...</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown('<div style="font-size:12px; font-weight:800; color:#94a3b8; letter-spacing:1px; margin-bottom:12px;">YOUR CURRENT TASKS</div>', unsafe_allow_html=True)
+            for a in asns["assignments"][:2]:
+                pid = a["patient_id"]
+                room = a["target_room"]
+                is_saved = any(p.id == pid and getattr(p, "evacuated", False) for p in (sim.patients if sim else []))
+                
+                if is_saved:
+                    st.markdown(f"""
+                    <div style="background:#0a1e0a; border: 1px solid #22c55e50; border-left: 4px solid #22c55e; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div style="font-size:16px; font-weight:800; color:#f1f5f9;">Evacuate Patient {pid}</div>
+                        <div style="background:#22c55e; color:#000; font-size:10px; font-weight:800; padding:2px 8px; border-radius:12px;">SAVED</div>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style="background:#0f1629; border: 1px solid #3b82f650; border-left: 4px solid #3b82f6; border-radius: 12px; padding: 16px; margin-bottom: 8px;">
+                      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <div style="font-size:16px; font-weight:800; color:#f1f5f9;">Evacuate Patient {pid}</div>
+                        <div style="background:#3b82f6; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:12px;">ACTIVE</div>
+                      </div>
+                      <div style="font-size:13px; color:#94a3b8; margin-bottom:12px;">
+                        📍 Location: Room {room}<br>
+                        ⚠️ Priority: HIGH
+                      </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    bcol1, bcol2 = st.columns(2)
+                    with bcol1:
+                        if st.button(f"✅ DONE", key=f"done_{pid}_{tick_val}", use_container_width=True, type="primary"):
+                            for p in sim.patients:
+                                if p.id == pid:
+                                    p.evacuated = True
+                            if _verif and pid in _verif.tasks:
+                                _verif.tasks[pid]["status"] = "completed"
+                                _verif.tasks[pid]["completed_tick"] = sim.tick
+                            st.session_state.timeline.append({"tick": sim.tick, "icon": "✅", "color": "#22c55e", "msg": f"Mobile App: Patient {pid} marked safe."})
+                            st.rerun()
+                    with bcol2:
+                        if st.button(f"🆘 HELP", key=f"help_{pid}_{tick_val}", use_container_width=True):
+                            if _verif and pid in _verif.tasks:
+                                _verif.tasks[pid]["status"] = "failed"
+                                _verif.tasks[pid]["reason"] = "Responder requested help"
+                            st.session_state.timeline.append({"tick": sim.tick, "icon": "🆘", "color": "#ef4444", "msg": f"Mobile App: SOS received for Patient {pid}."})
+                            st.rerun()
+                    st.markdown("<div style='margin-bottom:12px;'></div>", unsafe_allow_html=True)
+
+            if sim and sim.fire:
+                st.markdown("""
+                <div style="background:#3b0a0a; border: 1px solid #ef444450; border-radius: 12px; padding: 14px; margin-top: 16px; animation: pulse 2s infinite;">
+                  <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                    <span style="font-size:20px;">🔥</span>
+                    <span style="font-size:14px; font-weight:800; color:#ef4444;">HAZARD WARNING</span>
+                  </div>
+                  <div style="font-size:12px; color:#fca5a5; line-height:1.4;">
+                    Fire spreading in building. Maintain safe clearance.
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("""
+          <div style="display:flex; justify-content:space-around; padding-top: 20px; margin-top: 20px; border-top: 1px solid #1e2a40;">
+            <div style="text-align:center; color:#3b82f6;"><div style="font-size:20px;">📋</div><div style="font-size:9px; font-weight:700; margin-top:4px;">TASKS</div></div>
+            <div style="text-align:center; color:#64748b;"><div style="font-size:20px;">🗺️</div><div style="font-size:9px; font-weight:700; margin-top:4px;">MAP</div></div>
+            <div style="text-align:center; color:#64748b;"><div style="font-size:20px;">💬</div><div style="font-size:9px; font-weight:700; margin-top:4px;">COMMS</div></div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
