@@ -753,7 +753,7 @@ with st.sidebar:
         </div>
       </div>
       <div style="text-align:center; font-size:9px; font-style:italic; color:#475569; margin-top:16px;">
-        Built for Google Solution Challenge 2025
+        Built for Google Solution Challenge 2026
       </div>
     </div>
     """, unsafe_allow_html=True)
